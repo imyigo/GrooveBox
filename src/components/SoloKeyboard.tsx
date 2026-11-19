@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { MUSICAL_SCALES, ROOT_NOTES, getScaleNotes, KEYBOARD_KEY_MAP } from '../config/scales';
+import { MUSICAL_SCALES, ROOT_NOTES, getScaleNotes } from '../config/scales';
 import { audioEngine } from '../audio/AudioEngine';
 import { songSequencer } from '../audio/Sequencer';
-import { AcousticInstrumentType } from '../audio/SampledGuitarEngine';
-import { Circle, Trash2, Wand2, ChevronLeft, ChevronRight, Disc3 } from 'lucide-react';
+import { AcousticInstrumentType, INSTRUMENT_METAS } from '../audio/SampledGuitarEngine';
+import { GuitarChord } from '../types';
+import { Circle, Trash2, Wand2, Sparkles } from 'lucide-react';
 
 interface SoloKeyboardProps {
   currentRoot: string;
@@ -14,7 +15,16 @@ interface SoloKeyboardProps {
   isPlaying: boolean;
   percussionOn: boolean;
   onTogglePercussion: () => void;
+  activeChord: GuitarChord;
 }
+
+// FL Studio 3-Row Computer Keyboard Mapping
+// Upper Row: Octave +1 (High register)
+const ROW_UPPER_KEYS = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'ğ', 'ü', '[', ']'];
+// Home Row: Octave 0 (Main register)
+const ROW_HOME_KEYS = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'ş', 'i', ';', "'"];
+// Lower Row: Octave -1 (Bass register)
+const ROW_LOWER_KEYS = ['z', 'x', 'c', 'v', 'b', 'n', 'm', 'ö', 'ç', ',', '.'];
 
 export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
   currentRoot,
@@ -24,21 +34,31 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
   onApplyRecommendedChords,
   isPlaying,
   percussionOn,
-  onTogglePercussion
+  onTogglePercussion,
+  activeChord
 }) => {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [isRecordingSolo, setIsRecordingSolo] = useState(false);
   const [soloCount, setSoloCount] = useState(0);
   const [isSoloMuted, setIsSoloMuted] = useState(false);
 
-  // Solo Instrument & Octave Shift State
-  const [soloInstrument, setSoloInstrument] = useState<AcousticInstrumentType>('steel');
-  const [octaveShift, setOctaveShift] = useState<number>(0); // -2 to +2
+  // Selected Solo Instrument
+  const [soloInstrument, setSoloInstrument] = useState<AcousticInstrumentType>('violin');
 
-  // Scale notes recalculated on root, scale, or octave shift!
-  const baseOctave = 3 + octaveShift;
-  const scaleNotes = getScaleNotes(currentRoot, currentScaleId, baseOctave);
+  // Octave Shift (-2 to +2)
+  const [octaveShift, setOctaveShift] = useState<number>(0);
+
+  // Active Scale
   const activeScale = MUSICAL_SCALES[currentScaleId] || MUSICAL_SCALES['minor'];
+
+  // Base octaves for FL Studio rows
+  const homeOctave = 3 + octaveShift;
+  const upperNotes = getScaleNotes(currentRoot, currentScaleId, homeOctave + 1);
+  const homeNotes = getScaleNotes(currentRoot, currentScaleId, homeOctave);
+  const lowerNotes = getScaleNotes(currentRoot, currentScaleId, homeOctave - 1);
+
+  // Active Chord Tones calculation (for "Solo araç akorlara sadıktır" harmonic highlighting)
+  const chordRoot = activeChord.root; // e.g. "A", "C", "D"
 
   // Play a solo note
   const triggerSoloNote = useCallback(
@@ -48,27 +68,23 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
 
       if (keyName) {
         setActiveKey(keyName);
-        setTimeout(() => setActiveKey(null), 180);
+        setTimeout(() => setActiveKey(null), 150);
       }
 
       if (isRecordingSolo && isPlaying) {
-        songSequencer.addSoloNote(midi, 0.9);
+        songSequencer.addSoloNote(midi, 0.95);
         setSoloCount(songSequencer.getSoloCount());
       }
     },
     [isRecordingSolo, isPlaying]
   );
 
-  const handleSoloInstrumentChange = (type: AcousticInstrumentType) => {
+  const handleSelectInstrument = (type: AcousticInstrumentType) => {
     setSoloInstrument(type);
     audioEngine.setSoloInstrument(type);
   };
 
-  const handleOctaveChange = (delta: number) => {
-    setOctaveShift((prev) => Math.max(-2, Math.min(2, prev + delta)));
-  };
-
-  // Ableton-style Keyboard shortcuts: A-S-D-F-G-H-J-K-L, plus Z (octave down), X (octave up), R (record)
+  // FL Studio 3-Row Keyboard Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
@@ -76,19 +92,33 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
       }
 
       const key = e.key.toLowerCase();
-      const keyIndex = KEYBOARD_KEY_MAP.indexOf(key);
 
-      if (keyIndex !== -1 && keyIndex < scaleNotes.length) {
+      // Check Upper Row (Octave +1)
+      const upperIdx = ROW_UPPER_KEYS.indexOf(key);
+      if (upperIdx !== -1 && upperIdx < upperNotes.length) {
         e.preventDefault();
-        const note = scaleNotes[keyIndex];
-        triggerSoloNote(note.midi, key);
-      } else if (key === 'z') {
+        triggerSoloNote(upperNotes[upperIdx].midi, key);
+        return;
+      }
+
+      // Check Home Row (Octave 0)
+      const homeIdx = ROW_HOME_KEYS.indexOf(key);
+      if (homeIdx !== -1 && homeIdx < homeNotes.length) {
         e.preventDefault();
-        handleOctaveChange(-1);
-      } else if (key === 'x') {
+        triggerSoloNote(homeNotes[homeIdx].midi, key);
+        return;
+      }
+
+      // Check Lower Row (Octave -1)
+      const lowerIdx = ROW_LOWER_KEYS.indexOf(key);
+      if (lowerIdx !== -1 && lowerIdx < lowerNotes.length) {
         e.preventDefault();
-        handleOctaveChange(1);
-      } else if (key === 'r') {
+        triggerSoloNote(lowerNotes[lowerIdx].midi, key);
+        return;
+      }
+
+      // Global Solo recording toggle: 'Space' or 'Alt+R'
+      if (key === 'r' && e.altKey) {
         e.preventDefault();
         setIsRecordingSolo((prev) => {
           const next = !prev;
@@ -100,7 +130,7 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [scaleNotes, triggerSoloNote]);
+  }, [upperNotes, homeNotes, lowerNotes, triggerSoloNote]);
 
   const toggleRecording = () => {
     const next = !isRecordingSolo;
@@ -120,87 +150,46 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
   };
 
   return (
-    <div className="bg-[#121316] border-2 border-[#242730] rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4 relative overflow-hidden font-mono">
-      {/* Groovebox Brushed Metal Texture Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-white/[0.03] to-transparent pointer-events-none" />
-
-      {/* GROOVEBOX TOP OLED CONTROL PANEL */}
-      <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 bg-[#0a0a0d] border border-[#22242c] rounded-xl p-3 shadow-inner">
-        {/* Left: Solo Instrument Switcher */}
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="bg-[#101116] border-2 border-[#242734] rounded-xl p-3 sm:p-4 shadow-2xl space-y-2.5 font-mono select-none">
+      {/* GROOVEBOX HARDWARE TOOLBAR */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 bg-[#08080c] border border-[#20222c] rounded-lg p-2 text-xs">
+        {/* Left: Solo Instrument Selector (Keman, Klarnet, Saksafon, Mızıka, Naylon, Çelik, Bas) */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">
             SOLO ENSTRÜMAN:
           </span>
-          <div className="flex bg-[#16171d] border border-[#2a2d38] rounded-lg p-0.5 gap-1">
-            <button
-              onClick={() => handleSoloInstrumentChange('steel')}
-              className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
-                soloInstrument === 'steel'
-                  ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/30'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Çelik Akustik
-            </button>
-            <button
-              onClick={() => handleSoloInstrumentChange('nylon')}
-              className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
-                soloInstrument === 'nylon'
-                  ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/30'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Sıcak Naylon
-            </button>
-            <button
-              onClick={() => handleSoloInstrumentChange('bass')}
-              className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
-                soloInstrument === 'bass'
-                  ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/30'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Akustik Bas
-            </button>
+          <div className="flex flex-wrap gap-1 bg-[#14151c] border border-[#262836] rounded-lg p-0.5">
+            {(Object.keys(INSTRUMENT_METAS) as AcousticInstrumentType[]).map((instId) => {
+              const meta = INSTRUMENT_METAS[instId];
+              const isSelected = soloInstrument === instId;
+
+              return (
+                <button
+                  key={instId}
+                  onClick={() => handleSelectInstrument(instId)}
+                  className={`px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 transition-all ${
+                    isSelected
+                      ? 'bg-amber-500 text-neutral-950 shadow-sm shadow-amber-500/40'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  <span>{meta.icon}</span>
+                  <span>{meta.name}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Center: Octave Shift Controls (Z / X) */}
-        <div className="flex items-center gap-2 bg-[#16171d] border border-[#2a2d38] rounded-lg px-2.5 py-1">
-          <span className="text-[10px] uppercase text-neutral-400 font-bold">OKTAV:</span>
-          <button
-            onClick={() => handleOctaveChange(-1)}
-            disabled={octaveShift <= -2}
-            className="w-6 h-6 rounded bg-[#20222a] hover:bg-[#2b2e3a] disabled:opacity-30 text-white flex items-center justify-center font-bold text-xs"
-            title="Oktav Düşür (Z tuşu)"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-          </button>
-
-          <span className="font-mono text-xs font-bold px-2 py-0.5 bg-[#0a0a0d] border border-[#333744] text-amber-400 rounded min-w-[54px] text-center">
-            {octaveShift === 0 ? 'C3 (Std)' : octaveShift > 0 ? `+${octaveShift} (Tiz)` : `${octaveShift} (Bas)`}
-          </span>
-
-          <button
-            onClick={() => handleOctaveChange(1)}
-            disabled={octaveShift >= 2}
-            className="w-6 h-6 rounded bg-[#20222a] hover:bg-[#2b2e3a] disabled:opacity-30 text-white flex items-center justify-center font-bold text-xs"
-            title="Oktav Yükselt (X tuşu)"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-          <span className="text-[9px] text-neutral-400 hidden sm:inline">[Z / X]</span>
-        </div>
-
-        {/* Right: Scale & Root Selector */}
+        {/* Center: Scale & Root + Harmonic Assistant */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Root Note */}
-          <div className="flex items-center gap-1 bg-[#16171d] border border-[#2a2d38] rounded-lg px-2 py-1">
+          {/* Root */}
+          <div className="flex items-center gap-1 bg-[#14151c] border border-[#262836] rounded px-2 py-0.5">
             <span className="text-[10px] text-neutral-400">KÖK:</span>
             <select
               value={currentRoot}
               onChange={(e) => onRootChange(e.target.value)}
-              className="bg-transparent text-amber-400 font-bold text-xs focus:outline-none cursor-pointer font-mono"
+              className="bg-transparent text-amber-400 font-bold focus:outline-none cursor-pointer"
             >
               {ROOT_NOTES.map((r) => (
                 <option key={r} value={r} className="bg-neutral-900 text-white">
@@ -210,13 +199,13 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
             </select>
           </div>
 
-          {/* Gam / Makam */}
-          <div className="flex items-center gap-1 bg-[#16171d] border border-[#2a2d38] rounded-lg px-2 py-1">
+          {/* Scale */}
+          <div className="flex items-center gap-1 bg-[#14151c] border border-[#262836] rounded px-2 py-0.5">
             <span className="text-[10px] text-neutral-400">GAM:</span>
             <select
               value={currentScaleId}
               onChange={(e) => onScaleChange(e.target.value)}
-              className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer font-sans"
+              className="bg-transparent text-white font-bold focus:outline-none cursor-pointer font-sans"
             >
               {Object.values(MUSICAL_SCALES).map((s) => (
                 <option key={s.id} value={s.id} className="bg-neutral-900 text-white">
@@ -228,142 +217,192 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
 
           <button
             onClick={() => onApplyRecommendedChords(activeScale.recommendedChords.slice(0, 4))}
-            className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-xs transition-all"
-            title="Gama uygun akorları aktif kısma diz"
+            className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-[11px] font-bold flex items-center gap-1 transition-all"
+            title="Gama uygun akorları aktif kısma aktar"
           >
-            <Wand2 className="w-3.5 h-3.5" />
+            <Wand2 className="w-3 h-3" />
+            <span>Gama Uygun Akorlar</span>
           </button>
         </div>
-      </div>
 
-      {/* ELEKTRON / PUSH STYLE RGB SILICONE PERFORMANCE PADS (A S D F G H J K L) */}
-      <div className="relative z-10 space-y-2">
-        <div className="flex items-center justify-between text-xs text-neutral-400 font-sans">
-          <span className="flex items-center gap-2">
-            <Disc3 className="w-3.5 h-3.5 text-amber-500 animate-spin-slow" />
-            <strong className="text-white">Ableton Pad Klavyesi:</strong> [A, S, D, F, G, H, J, K, L, ;]
-          </span>
-          <span className="font-mono text-[11px] text-amber-400/80">
-            {currentRoot} {activeScale.name.split(' ')[0]} ({scaleNotes[0]?.noteName} - {scaleNotes[scaleNotes.length - 1]?.noteName})
-          </span>
-        </div>
-
-        {/* 10 RGB Hardware Silicon Pads */}
-        <div className="grid grid-cols-5 sm:grid-cols-10 gap-2 select-none">
-          {scaleNotes.slice(0, 10).map((note, idx) => {
-            const keyChar = KEYBOARD_KEY_MAP[idx].toUpperCase();
-            const isPressed = activeKey === KEYBOARD_KEY_MAP[idx];
-            const isRoot = idx % 7 === 0;
-
-            return (
-              <button
-                key={`${note.noteName}-${idx}`}
-                onClick={() => triggerSoloNote(note.midi, KEYBOARD_KEY_MAP[idx])}
-                className={`relative flex flex-col items-center justify-between p-2.5 rounded-xl border-2 transition-all active:scale-95 min-h-[105px] group shadow-lg ${
-                  isPressed
-                    ? 'bg-gradient-to-t from-amber-400 to-amber-200 border-amber-100 text-neutral-950 scale-105 shadow-[0_0_25px_rgba(251,191,36,0.8)] z-10'
-                    : isRoot
-                    ? 'bg-gradient-to-b from-[#241a12] to-[#140e0a] border-amber-600/80 hover:border-amber-400 text-amber-200 shadow-amber-950/40'
-                    : 'bg-gradient-to-b from-[#1b1c22] to-[#101115] border-[#2c303c] hover:border-[#42485a] text-neutral-200 hover:text-white'
-                }`}
-              >
-                {/* Silicon Pad Top LED Header */}
-                <div className="w-full flex items-center justify-between">
-                  <div
-                    className={`w-6 h-6 rounded-md font-mono text-xs font-black flex items-center justify-center border shadow-inner ${
-                      isPressed
-                        ? 'bg-neutral-950 text-amber-400 border-neutral-900'
-                        : isRoot
-                        ? 'bg-amber-500 text-neutral-950 border-amber-400'
-                        : 'bg-[#252834] text-neutral-300 border-[#383d4e] group-hover:bg-[#323646]'
-                    }`}
-                  >
-                    {keyChar}
-                  </div>
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      isPressed
-                        ? 'bg-neutral-950 animate-ping'
-                        : isRoot
-                        ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]'
-                        : 'bg-neutral-600'
-                    }`}
-                  />
-                </div>
-
-                {/* Big Note Name (e.g. A3, C4) */}
-                <div className="font-bold text-lg tracking-tight font-mono my-1">
-                  {note.noteName}
-                </div>
-
-                {/* Degree Display */}
-                <div
-                  className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-semibold ${
-                    isPressed
-                      ? 'bg-neutral-950/20 text-neutral-950'
-                      : isRoot
-                      ? 'bg-amber-500/20 text-amber-300'
-                      : 'bg-neutral-900 text-neutral-400 group-hover:text-amber-400'
-                  }`}
-                >
-                  {isRoot ? 'KÖK' : `${(idx % 7) + 1}. DER`}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* HARDWARE FOOTER: SOLO LOOPER & TRACK MUTES */}
-      <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#242730]">
-        {/* Solo Looper Controls */}
+        {/* Right: Octave Transpose & Solo Looper */}
         <div className="flex items-center gap-2">
+          {/* Octave Shift */}
+          <div className="flex items-center gap-1 bg-[#14151c] border border-[#262836] rounded px-2 py-0.5">
+            <span className="text-[10px] text-neutral-400 font-bold">OKTAV:</span>
+            <button
+              onClick={() => setOctaveShift((prev) => Math.max(-2, prev - 1))}
+              disabled={octaveShift <= -2}
+              className="w-5 h-5 rounded bg-[#20222e] hover:bg-[#2c3040] disabled:opacity-30 text-white font-bold text-xs"
+            >
+              -
+            </button>
+            <span className="text-amber-400 font-bold text-xs px-1">
+              {octaveShift === 0 ? '0' : octaveShift > 0 ? `+${octaveShift}` : `${octaveShift}`}
+            </span>
+            <button
+              onClick={() => setOctaveShift((prev) => Math.min(2, prev + 1))}
+              disabled={octaveShift >= 2}
+              className="w-5 h-5 rounded bg-[#20222e] hover:bg-[#2c3040] disabled:opacity-30 text-white font-bold text-xs"
+            >
+              +
+            </button>
+          </div>
+
+          {/* Record Solo Button */}
           <button
             onClick={toggleRecording}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 border-2 transition-all active:scale-95 ${
+            className={`px-2.5 py-1 rounded text-xs font-bold flex items-center gap-1.5 border transition-all ${
               isRecordingSolo
-                ? 'bg-red-500/20 text-red-400 border-red-500 shadow-[0_0_12px_rgba(239,68,68,0.5)] animate-pulse'
-                : 'bg-[#181920] border-[#2a2d38] text-neutral-300 hover:border-neutral-600'
+                ? 'bg-red-500/20 text-red-400 border-red-500 animate-pulse'
+                : 'bg-[#14151c] border-[#262836] text-neutral-300 hover:border-neutral-500'
             }`}
           >
-            <Circle className={`w-3.5 h-3.5 ${isRecordingSolo ? 'fill-red-500 text-red-500' : 'text-neutral-500'}`} />
-            <span>{isRecordingSolo ? 'OVERDUB KAYDEDİYOR (R)' : 'SOLO KAYDET (R)'}</span>
+            <Circle className={`w-2.5 h-2.5 ${isRecordingSolo ? 'fill-red-500 text-red-500' : 'text-neutral-500'}`} />
+            <span>{isRecordingSolo ? 'REC' : 'SOLO KAYDET'}</span>
           </button>
 
           {soloCount > 0 && (
-            <div className="flex items-center gap-1.5 bg-[#0a0a0d] border border-[#2a2d38] rounded-lg px-2.5 py-1 text-xs">
-              <span className="text-amber-400 font-mono">Loop: {soloCount} nota</span>
+            <div className="flex items-center gap-1 bg-[#08080c] border border-[#262836] rounded px-1.5 py-0.5 text-[10px]">
+              <span className="text-amber-400">{soloCount} nota</span>
               <button
                 onClick={handleToggleSoloMute}
-                className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                  isSoloMuted ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                }`}
+                className={`px-1 rounded ${isSoloMuted ? 'text-red-400 line-through' : 'text-emerald-400 font-bold'}`}
               >
                 {isSoloMuted ? 'MUTE' : 'ON'}
               </button>
-              <button
-                onClick={handleClearSolo}
-                className="p-1 hover:text-red-400 text-neutral-500 rounded"
-                title="Kaydedilen soloyu temizle"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
+              <button onClick={handleClearSolo} className="text-neutral-500 hover:text-red-400">
+                <Trash2 className="w-3 h-3" />
               </button>
             </div>
           )}
-        </div>
 
-        {/* Quick Percussion Rhythm Indicator & Button */}
-        <div className="flex items-center gap-2">
+          {/* Quick Rhythm Toggle */}
           <button
             onClick={onTogglePercussion}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+            className={`px-2.5 py-1 rounded text-xs font-bold border transition-all ${
               percussionOn
-                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-sm'
-                : 'bg-[#181920] text-neutral-500 border-[#2a2d38]'
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                : 'bg-[#14151c] text-neutral-500 border-[#262836]'
             }`}
           >
-            {percussionOn ? '🥁 Vurmalı: AÇIK' : '🥁 Vurmalı: KAPALI'}
+            {percussionOn ? '🥁 Ritim: Açık' : '🥁 Ritim: Kapalı'}
           </button>
+        </div>
+      </div>
+
+      {/* HARMONIC PROMISE: "SOLO ARAÇ AKORLARA SADIKTIR" */}
+      <div className="flex items-center justify-between text-[11px] text-neutral-400 px-1">
+        <span className="flex items-center gap-1.5 text-neutral-300">
+          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+          <span>
+            Aktif Akor: <strong className="text-amber-400 font-bold text-sm">{activeChord.displayName}</strong>
+            {' '}(Altın sarısı parlayan tuşlar akorun kök ve renk sesleridir, detone olmak imkansızdır!)
+          </span>
+        </span>
+        <span className="text-[10px] text-neutral-500 hidden sm:inline">
+          FL Studio Klavye Düzeni: [Q-Ü: Tiz] • [A-İ: Ana] • [Z-Ç: Bas]
+        </span>
+      </div>
+
+      {/* FL STUDIO 3-ROW HARDWARE KEYBOARD PADS (Zero Scroll, High Density) */}
+      <div className="space-y-1.5">
+        {/* ROW 1: TİZ OKTAV (Upper Row: Q W E R T Y U I O P Ğ Ü) */}
+        <div className="flex items-center gap-1">
+          <div className="w-12 text-[9px] font-bold text-cyan-400/80 uppercase tracking-tighter shrink-0 text-center">
+            TİZ +1
+          </div>
+          <div className="grid grid-cols-12 gap-1 flex-1">
+            {upperNotes.slice(0, 12).map((note, idx) => {
+              const keyChar = (ROW_UPPER_KEYS[idx] || '').toUpperCase();
+              const isPressed = activeKey === ROW_UPPER_KEYS[idx];
+              const isChordTone = note.noteName.startsWith(chordRoot);
+
+              return (
+                <button
+                  key={`upper-${note.noteName}-${idx}`}
+                  onClick={() => triggerSoloNote(note.midi, ROW_UPPER_KEYS[idx])}
+                  className={`relative flex flex-col items-center justify-between p-1 rounded-lg border transition-all active:scale-95 h-14 ${
+                    isPressed
+                      ? 'bg-gradient-to-t from-cyan-400 to-white text-neutral-950 scale-105 shadow-[0_0_15px_rgba(34,211,238,0.9)] z-10'
+                      : isChordTone
+                      ? 'bg-gradient-to-b from-[#1b2a30] to-[#0e181c] border-cyan-500/80 text-cyan-300 shadow-sm'
+                      : 'bg-[#14161d] border-[#222634] text-neutral-300 hover:border-neutral-500'
+                  }`}
+                >
+                  <span className="text-[9px] font-mono font-bold text-neutral-400">{keyChar}</span>
+                  <span className="font-bold text-xs font-mono">{note.noteName}</span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isChordTone ? 'bg-cyan-400 shadow-[0_0_4px_rgba(34,211,238,0.8)]' : 'bg-neutral-600'}`} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ROW 2: ANA ORTA OKTAV (Home Row: A S D F G H J K L Ş İ) */}
+        <div className="flex items-center gap-1">
+          <div className="w-12 text-[9px] font-bold text-amber-400 uppercase tracking-tighter shrink-0 text-center">
+            ANA 0
+          </div>
+          <div className="grid grid-cols-12 gap-1 flex-1">
+            {homeNotes.slice(0, 12).map((note, idx) => {
+              const keyChar = (ROW_HOME_KEYS[idx] || '').toUpperCase();
+              const isPressed = activeKey === ROW_HOME_KEYS[idx];
+              const isChordTone = note.noteName.startsWith(chordRoot);
+
+              return (
+                <button
+                  key={`home-${note.noteName}-${idx}`}
+                  onClick={() => triggerSoloNote(note.midi, ROW_HOME_KEYS[idx])}
+                  className={`relative flex flex-col items-center justify-between p-1 rounded-lg border-2 transition-all active:scale-95 h-16 ${
+                    isPressed
+                      ? 'bg-gradient-to-t from-amber-400 to-white text-neutral-950 scale-105 shadow-[0_0_20px_rgba(251,191,36,0.9)] z-10'
+                      : isChordTone
+                      ? 'bg-gradient-to-b from-[#2e1f10] to-[#170e06] border-amber-500 text-amber-200 shadow-md shadow-amber-950/40 ring-1 ring-amber-500/30'
+                      : 'bg-[#171822] border-[#282d3d] text-neutral-200 hover:border-neutral-500'
+                  }`}
+                >
+                  <span className="text-[10px] font-mono font-black text-amber-400">{keyChar}</span>
+                  <span className="font-bold text-sm font-mono">{note.noteName}</span>
+                  <span className={`text-[9px] font-mono ${isChordTone ? 'text-amber-300 font-bold' : 'text-neutral-500'}`}>
+                    {isChordTone ? '★ KÖK' : `${(idx % 7) + 1}. DER`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ROW 3: BAS OKTAV (Lower Row: Z X C V B N M Ö Ç) */}
+        <div className="flex items-center gap-1">
+          <div className="w-12 text-[9px] font-bold text-purple-400/80 uppercase tracking-tighter shrink-0 text-center">
+            BAS -1
+          </div>
+          <div className="grid grid-cols-12 gap-1 flex-1">
+            {lowerNotes.slice(0, 12).map((note, idx) => {
+              const keyChar = (ROW_LOWER_KEYS[idx] || '').toUpperCase();
+              const isPressed = activeKey === ROW_LOWER_KEYS[idx];
+              const isChordTone = note.noteName.startsWith(chordRoot);
+
+              return (
+                <button
+                  key={`lower-${note.noteName}-${idx}`}
+                  onClick={() => triggerSoloNote(note.midi, ROW_LOWER_KEYS[idx])}
+                  className={`relative flex flex-col items-center justify-between p-1 rounded-lg border transition-all active:scale-95 h-13 ${
+                    isPressed
+                      ? 'bg-gradient-to-t from-purple-400 to-white text-neutral-950 scale-105 shadow-[0_0_15px_rgba(192,132,252,0.9)] z-10'
+                      : isChordTone
+                      ? 'bg-gradient-to-b from-[#25152a] to-[#120a14] border-purple-500/80 text-purple-300 shadow-sm'
+                      : 'bg-[#12131a] border-[#202330] text-neutral-400 hover:border-neutral-500'
+                  }`}
+                >
+                  <span className="text-[9px] font-mono font-bold text-neutral-500">{keyChar}</span>
+                  <span className="font-bold text-xs font-mono">{note.noteName}</span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isChordTone ? 'bg-purple-400 shadow-[0_0_4px_rgba(192,132,252,0.8)]' : 'bg-neutral-700'}`} />
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

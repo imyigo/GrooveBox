@@ -28,6 +28,8 @@ export interface StrumPattern {
   defaultBpm: number;
 }
 
+export type DrumMode = 'full' | 'cajon-shaker' | 'shaker-only' | 'flamenco' | 'mute';
+
 export interface SongSection {
   id: string;
   name: string; // e.g. "Intro (Giriş)", "Verse (Söz)", "Chorus (Nakarat)", "Solo (Köprü)"
@@ -35,6 +37,7 @@ export interface SongSection {
   patternId: string;
   repeats: number; // 1, 2, 4, 8 (or 0 for infinite loop)
   color: string;
+  drumMode: DrumMode;
 }
 
 export interface BodyPreset {

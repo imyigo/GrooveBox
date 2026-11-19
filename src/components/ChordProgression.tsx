@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { GUITAR_CHORDS } from '../config/chords';
 import { SONG_PROGRESSIONS, SongProgression } from '../config/progressions';
 import { MUSICAL_SCALES } from '../config/scales';
-import { GuitarChord, SongSection } from '../types';
+import { GuitarChord, SongSection, DrumMode } from '../types';
 import { Plus, Trash2, ArrowUpDown, Music, Sparkles, Dices, Repeat, RefreshCw, PlayCircle, Layers } from 'lucide-react';
 import { strumEngine } from '../audio/StrumEngine';
 import { audioEngine } from '../audio/AudioEngine';
@@ -105,6 +105,15 @@ export const ChordProgression: React.FC<ChordProgressionProps> = ({
     onUpdateSections(nextSections);
   };
 
+  const handleSectionDrumModeChange = (drumMode: DrumMode) => {
+    const nextSections = [...sections];
+    nextSections[currentSectionIndex] = {
+      ...currentSection,
+      drumMode
+    };
+    onUpdateSections(nextSections);
+  };
+
   const handleAddNewSection = () => {
     const newId = `sec-${Date.now()}`;
     const names = ['Köprü (Bridge)', 'Outro (Bitiş)', 'Nakarat B', 'Solo 2'];
@@ -116,7 +125,8 @@ export const ChordProgression: React.FC<ChordProgressionProps> = ({
       chords: ['Am', 'Dm', 'E', 'Am'],
       patternId: 'folk-rock',
       repeats: 2,
-      color: 'from-amber-600 to-rose-700'
+      color: 'from-amber-600 to-rose-700',
+      drumMode: 'cajon-shaker'
     };
 
     onUpdateSections([...sections, newSec]);
@@ -219,18 +229,34 @@ export const ChordProgression: React.FC<ChordProgressionProps> = ({
             </button>
           </div>
 
-          {/* Current Section Repeats & Counter */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-neutral-400">Bu Kısım Tekrarı:</span>
+          {/* Current Section Repeats, Drum Mode & Counter */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Kısım Davul Modu */}
+            <div className="flex items-center gap-1 bg-[#16171d] border border-[#2a2d38] rounded-md px-2 py-0.5">
+              <span className="text-neutral-400">🥁 Kısım Davulu:</span>
+              <select
+                value={currentSection.drumMode || 'cajon-shaker'}
+                onChange={(e) => handleSectionDrumModeChange(e.target.value as DrumMode)}
+                className="bg-transparent text-emerald-400 font-bold focus:outline-none cursor-pointer"
+              >
+                <option value="full" className="bg-neutral-900">Tam Akustik Davul</option>
+                <option value="cajon-shaker" className="bg-neutral-900">Kahon & Shaker</option>
+                <option value="shaker-only" className="bg-neutral-900">Sadece Shaker/Tef</option>
+                <option value="flamenco" className="bg-neutral-900">Flamenko Vuruş</option>
+                <option value="mute" className="bg-neutral-900">Davulsuz (Mute)</option>
+              </select>
+            </div>
+
+            <span className="text-neutral-400">Tekrar:</span>
             <select
               value={currentSection.repeats}
               onChange={(e) => handleSectionRepeatsChange(parseInt(e.target.value, 10))}
               className="bg-[#16171d] border border-[#2a2d38] rounded-md px-2 py-0.5 text-amber-400 font-bold focus:outline-none cursor-pointer"
             >
-              <option value={1}>1x Tekrar</option>
-              <option value={2}>2x Tekrar</option>
-              <option value={4}>4x Tekrar</option>
-              <option value={8}>8x Tekrar</option>
+              <option value={1} className="bg-neutral-900">1x Tekrar</option>
+              <option value={2} className="bg-neutral-900">2x Tekrar</option>
+              <option value={4} className="bg-neutral-900">4x Tekrar</option>
+              <option value={8} className="bg-neutral-900">8x Tekrar</option>
             </select>
             <span className="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-400 font-bold text-[11px]">
               {currentRepeat + 1} / {currentSection.repeats}

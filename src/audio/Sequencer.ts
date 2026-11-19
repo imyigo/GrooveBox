@@ -35,7 +35,8 @@ export const DEFAULT_SONG_SECTIONS: SongSection[] = [
     chords: ['Am', 'Dm'],
     patternId: 'fingerpicking-travis',
     repeats: 2,
-    color: 'from-blue-600 to-cyan-700'
+    color: 'from-blue-600 to-cyan-700',
+    drumMode: 'shaker-only'
   },
   {
     id: 'verse',
@@ -43,7 +44,8 @@ export const DEFAULT_SONG_SECTIONS: SongSection[] = [
     chords: ['Am', 'Dm', 'E', 'Am'],
     patternId: 'percussive-groove',
     repeats: 2,
-    color: 'from-emerald-600 to-teal-700'
+    color: 'from-emerald-600 to-teal-700',
+    drumMode: 'cajon-shaker'
   },
   {
     id: 'chorus',
@@ -51,7 +53,8 @@ export const DEFAULT_SONG_SECTIONS: SongSection[] = [
     chords: ['F', 'G', 'C', 'Am'],
     patternId: 'folk-rock',
     repeats: 4,
-    color: 'from-amber-600 to-orange-700'
+    color: 'from-amber-600 to-orange-700',
+    drumMode: 'full'
   },
   {
     id: 'solo',
@@ -59,7 +62,8 @@ export const DEFAULT_SONG_SECTIONS: SongSection[] = [
     chords: ['Dm', 'G', 'E7', 'Am'],
     patternId: 'rumba-spanish',
     repeats: 2,
-    color: 'from-purple-600 to-pink-700'
+    color: 'from-purple-600 to-pink-700',
+    drumMode: 'flamenco'
   }
 ];
 
@@ -303,23 +307,51 @@ export class SongSequencer {
       });
     }
 
-    // 2. 100% Organic Acoustic Percussion
-    if (this.percussionEnabled && audioEngine.percussion) {
-      if (step === 0) {
-        audioEngine.percussion.playCajonBass(time, 0.95);
-      } else if (step === 4) {
-        audioEngine.percussion.playCajonSlap(time, 0.85);
-        audioEngine.percussion.playTambourine(time, 0.65);
-      } else if (step === 8) {
-        audioEngine.percussion.playCajonBass(time, 0.85);
-      } else if (step === 12) {
-        audioEngine.percussion.playCajonSlap(time, 0.9);
-        audioEngine.percussion.playTambourine(time, 0.75);
-      }
+    // 2. Section-Aware Organic Acoustic Percussion
+    if (this.percussionEnabled && audioEngine.percussion && section.drumMode !== 'mute') {
+      const mode = section.drumMode || 'cajon-shaker';
 
-      if (step % 2 === 0) {
-        const isAccent = step % 4 === 0;
-        audioEngine.percussion.playShaker(time, isAccent ? 0.45 : 0.25, isAccent);
+      if (mode === 'shaker-only') {
+        if (step % 2 === 0) {
+          const isAccent = step % 4 === 0;
+          audioEngine.percussion.playShaker(time, isAccent ? 0.45 : 0.25, isAccent);
+        }
+        if (step === 4 || step === 12) {
+          audioEngine.percussion.playTambourine(time, 0.4);
+        }
+      } else if (mode === 'cajon-shaker') {
+        if (step === 0) audioEngine.percussion.playCajonBass(time, 0.95);
+        else if (step === 4) {
+          audioEngine.percussion.playCajonSlap(time, 0.85);
+          audioEngine.percussion.playTambourine(time, 0.6);
+        } else if (step === 8) audioEngine.percussion.playCajonBass(time, 0.85);
+        else if (step === 12) {
+          audioEngine.percussion.playCajonSlap(time, 0.9);
+          audioEngine.percussion.playTambourine(time, 0.65);
+        }
+        if (step % 2 === 0) {
+          audioEngine.percussion.playShaker(time, step % 4 === 0 ? 0.4 : 0.2, step % 4 === 0);
+        }
+      } else if (mode === 'full') {
+        // Full acoustic beat: syncopated kick/bass + slap + jingle
+        if (step === 0 || step === 10) audioEngine.percussion.playCajonBass(time, 1.0);
+        else if (step === 4 || step === 12) {
+          audioEngine.percussion.playCajonSlap(time, 0.95);
+          audioEngine.percussion.playTambourine(time, 0.8);
+        } else if (step === 8) audioEngine.percussion.playCajonBass(time, 0.85);
+
+        if (step % 2 === 0) {
+          audioEngine.percussion.playShaker(time, 0.35, step % 4 === 0);
+        }
+      } else if (mode === 'flamenco') {
+        // Energetic Flamenco / Rumba
+        if (step === 0 || step === 8) audioEngine.percussion.playCajonBass(time, 0.95);
+        if (step === 3 || step === 11) audioEngine.percussion.playCajonSlap(time, 0.85);
+        if (step === 6 || step === 14) {
+          audioEngine.percussion.playTambourine(time, 0.7);
+          audioEngine.percussion.playCajonSlap(time, 0.7);
+        }
+        audioEngine.percussion.playShaker(time, 0.3, false);
       }
     }
 

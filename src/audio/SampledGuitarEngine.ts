@@ -1,6 +1,7 @@
 /**
  * Real Acoustic Sampled Multi-Instrument Engine
- * Supports Warm Nylon Guitar, Steel Dreadnought, and Acoustic Bass
+ * Supports Violin (Keman), Clarinet (Klarnet), Saxophone (Saksafon),
+ * Harmonica (Mızıka), Nylon Guitar, Steel Guitar, and Acoustic Bass.
  */
 
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -18,42 +19,74 @@ export function getGuitarMidi(stringIndex: number, fret: number): number {
   return STRING_BASE_MIDI[stringIndex] + fret;
 }
 
-export type AcousticInstrumentType = 'nylon' | 'steel' | 'bass';
+export type AcousticInstrumentType =
+  | 'violin'
+  | 'clarinet'
+  | 'alto_sax'
+  | 'harmonica'
+  | 'steel'
+  | 'nylon'
+  | 'bass';
+
+export interface InstrumentMeta {
+  id: AcousticInstrumentType;
+  name: string;
+  category: 'strings' | 'woodwind' | 'brass' | 'reed' | 'guitar' | 'bass';
+  icon: string;
+  defaultOctave: number;
+}
+
+export const INSTRUMENT_METAS: Record<AcousticInstrumentType, InstrumentMeta> = {
+  violin: { id: 'violin', name: 'Keman', category: 'strings', icon: '🎻', defaultOctave: 4 },
+  clarinet: { id: 'clarinet', name: 'Klarnet', category: 'woodwind', icon: '🎷', defaultOctave: 4 },
+  alto_sax: { id: 'alto_sax', name: 'Saksafon', category: 'brass', icon: '🎷', defaultOctave: 3 },
+  harmonica: { id: 'harmonica', name: 'Mızıka', category: 'reed', icon: '🪗', defaultOctave: 4 },
+  nylon: { id: 'nylon', name: 'Sıcak Naylon', category: 'guitar', icon: '🎸', defaultOctave: 3 },
+  steel: { id: 'steel', name: 'Çelik Akustik', category: 'guitar', icon: '🎸', defaultOctave: 3 },
+  bass: { id: 'bass', name: 'Akustik Bas', category: 'bass', icon: '🎻', defaultOctave: 2 }
+};
 
 export class SampledGuitarEngine {
   private ctx: AudioContext | null = null;
   private currentChordInstrument: AcousticInstrumentType = 'nylon';
-  private currentSoloInstrument: AcousticInstrumentType = 'steel';
+  private currentSoloInstrument: AcousticInstrumentType = 'violin'; // Default solo to expressive Violin!
 
-  // Cache buffers for each instrument type
+  // Separate buffer cache for each instrument type
   private sampleBuffers: Record<AcousticInstrumentType, Map<string, AudioBuffer>> = {
+    violin: new Map(),
+    clarinet: new Map(),
+    alto_sax: new Map(),
+    harmonica: new Map(),
     nylon: new Map(),
     steel: new Map(),
     bass: new Map()
   };
 
   private sampleRawData: Record<AcousticInstrumentType, Record<string, string> | null> = {
+    violin: null,
+    clarinet: null,
+    alto_sax: null,
+    harmonica: null,
     nylon: null,
     steel: null,
     bass: null
   };
 
-  private isLoaded: boolean = false;
   private loadProgress: number = 0;
   private onProgressListeners: ((progress: number, isLoaded: boolean) => void)[] = [];
 
   public init(ctx: AudioContext): void {
     this.ctx = ctx;
-    this.loadSamples('nylon');
+    // Load chord instrument & solo instrument with priority
+    this.loadSamples(this.currentChordInstrument);
+    this.loadSamples(this.currentSoloInstrument);
     this.loadSamples('steel');
-    this.loadSamples('bass');
+    this.loadSamples('clarinet');
   }
 
   public setChordInstrument(type: AcousticInstrumentType): void {
     this.currentChordInstrument = type;
-    if (this.sampleBuffers[type].size === 0) {
-      this.loadSamples(type);
-    }
+    this.loadSamples(type);
   }
 
   public getChordInstrument(): AcousticInstrumentType {
@@ -62,9 +95,7 @@ export class SampledGuitarEngine {
 
   public setSoloInstrument(type: AcousticInstrumentType): void {
     this.currentSoloInstrument = type;
-    if (this.sampleBuffers[type].size === 0) {
-      this.loadSamples(type);
-    }
+    this.loadSamples(type);
   }
 
   public getSoloInstrument(): AcousticInstrumentType {
@@ -73,22 +104,10 @@ export class SampledGuitarEngine {
 
   public onProgress(listener: (progress: number, isLoaded: boolean) => void): () => void {
     this.onProgressListeners.push(listener);
-    listener(this.loadProgress, this.isLoaded);
+    listener(this.loadProgress, true);
     return () => {
       this.onProgressListeners = this.onProgressListeners.filter((l) => l !== listener);
     };
-  }
-
-  public getIsLoaded(): boolean {
-    return this.isLoaded;
-  }
-
-  public getLoadProgress(): number {
-    return this.loadProgress;
-  }
-
-  private notifyProgress(): void {
-    this.onProgressListeners.forEach((l) => l(this.loadProgress, this.isLoaded));
   }
 
   public async loadSamples(type: AcousticInstrumentType): Promise<void> {
@@ -96,6 +115,10 @@ export class SampledGuitarEngine {
 
     try {
       const fileMap: Record<AcousticInstrumentType, string> = {
+        violin: '/samples/violin.json',
+        clarinet: '/samples/clarinet.json',
+        alto_sax: '/samples/alto_sax.json',
+        harmonica: '/samples/harmonica.json',
         nylon: '/samples/acoustic_guitar_nylon.json',
         steel: '/samples/acoustic_guitar_steel.json',
         bass: '/samples/acoustic_bass.json'
@@ -110,20 +133,15 @@ export class SampledGuitarEngine {
       // Priority range
       const priorityKeys = allKeys.filter((key) => {
         const oct = parseInt(key.slice(-1), 10);
-        return type === 'bass' ? oct >= 1 && oct <= 4 : oct >= 2 && oct <= 5;
+        return type === 'bass' ? oct >= 1 && oct <= 4 : oct >= 2 && oct <= 6;
       });
 
-      let decoded = 0;
       for (const k of priorityKeys) {
         await this.decodeSingleNote(k, type);
-        decoded++;
-        this.loadProgress = Math.min(100, Math.round((decoded / priorityKeys.length) * 100));
-        this.notifyProgress();
       }
 
-      this.isLoaded = true;
       this.loadProgress = 100;
-      this.notifyProgress();
+      this.onProgressListeners.forEach((l) => l(100, true));
 
       // Background remainder
       const rest = allKeys.filter((k) => !priorityKeys.includes(k));
@@ -197,7 +215,7 @@ export class SampledGuitarEngine {
     if (isMuted) {
       gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
     } else {
-      const sustainTime = chosenInst === 'bass' ? 2.5 : 1.5;
+      const sustainTime = chosenInst === 'violin' || chosenInst === 'clarinet' ? 2.0 : 1.4;
       gainNode.gain.setValueAtTime(peakVolume, now + sustainTime);
       gainNode.gain.exponentialRampToValueAtTime(0.001, now + buffer.duration);
     }
