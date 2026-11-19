@@ -159,4 +159,33 @@ export class AcousticPercussion {
     src.start(now);
     src.stop(now + 0.15);
   }
+
+  /**
+   * Resonant Wood Rim / Block (Ahşap Tokmak Vuruşu)
+   */
+  public playWoodBlock(time?: number, velocity: number = 0.85): void {
+    const ctx = this.ctx;
+    const now = Math.max(time ?? ctx.currentTime, ctx.currentTime);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(680, now);
+    osc.frequency.exponentialRampToValueAtTime(340, now + 0.04);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(velocity * 0.85, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(950, now);
+    filter.Q.setValueAtTime(4.0, now);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.outputNode);
+
+    osc.start(now);
+    osc.stop(now + 0.08);
+  }
 }

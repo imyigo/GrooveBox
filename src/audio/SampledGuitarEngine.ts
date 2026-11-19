@@ -26,12 +26,13 @@ export type AcousticInstrumentType =
   | 'harmonica'
   | 'steel'
   | 'nylon'
-  | 'bass';
+  | 'bass'
+  | 'drums';
 
 export interface InstrumentMeta {
   id: AcousticInstrumentType;
   name: string;
-  category: 'strings' | 'woodwind' | 'brass' | 'reed' | 'guitar' | 'bass';
+  category: 'strings' | 'woodwind' | 'brass' | 'reed' | 'guitar' | 'bass' | 'percussion';
   icon: string;
   defaultOctave: number;
 }
@@ -45,20 +46,22 @@ export interface InstrumentEnvelope {
 }
 
 export const INSTRUMENT_ENVELOPES: Record<AcousticInstrumentType, InstrumentEnvelope> = {
-  // Keman: Doğal yay sürtünmesi, sıcak ahşap rezonans, kontrollü serbest bırakma
-  violin: { attackSec: 0.035, decaySec: 0.42, sustainLevel: 0.70, maxHoldSec: 0.85, releaseSec: 0.12 },
-  // Klarnet: Gerçek ahşap kamış dili, çevik Türk/Caz klarnet solosu, sarkmayan duruş
-  clarinet: { attackSec: 0.020, decaySec: 0.38, sustainLevel: 0.68, maxHoldSec: 0.72, releaseSec: 0.09 },
-  // Saksafon: Sıcak pirinç/kamış ısırması, dengeli nefes sönümü
-  alto_sax: { attackSec: 0.018, decaySec: 0.40, sustainLevel: 0.70, maxHoldSec: 0.75, releaseSec: 0.10 },
-  // Mızıka: Hızlı blues kamış tepkisi, net ve keskin artikülasyon
-  harmonica: { attackSec: 0.012, decaySec: 0.32, sustainLevel: 0.60, maxHoldSec: 0.60, releaseSec: 0.08 },
-  // Sıcak Naylon: Gerçek parmak/tırnak çekişi - vuruştan hemen sonra doğal sönüme geçer (ASLA uzayıp boğulmaz)
-  nylon: { attackSec: 0.004, decaySec: 0.45, sustainLevel: 0.20, maxHoldSec: 0.60, releaseSec: 0.07 },
-  // Çelik Akustik: Parlak bronz tel vuruşu, berrak sönüm
-  steel: { attackSec: 0.003, decaySec: 0.50, sustainLevel: 0.25, maxHoldSec: 0.65, releaseSec: 0.08 },
+  // Keman: Zengin yay rezonansı ve uzun akıcı sustain
+  violin: { attackSec: 0.035, decaySec: 0.45, sustainLevel: 0.75, maxHoldSec: 3.8, releaseSec: 0.28 },
+  // Klarnet: Sıcak ahşap nefes ve parlak kamış tonu
+  clarinet: { attackSec: 0.022, decaySec: 0.40, sustainLevel: 0.70, maxHoldSec: 3.5, releaseSec: 0.25 },
+  // Saksafon: Pirinç gövde vibratosu ve rezonans
+  alto_sax: { attackSec: 0.020, decaySec: 0.42, sustainLevel: 0.72, maxHoldSec: 3.5, releaseSec: 0.26 },
+  // Mızıka: Akustik hava blues kamış tınısı
+  harmonica: { attackSec: 0.015, decaySec: 0.35, sustainLevel: 0.65, maxHoldSec: 3.2, releaseSec: 0.22 },
+  // Sıcak Naylon: İspanyol sedir gövde, ölçülü 3.6s doğal oda rezonansı
+  nylon: { attackSec: 0.004, decaySec: 0.75, sustainLevel: 0.38, maxHoldSec: 3.6, releaseSec: 0.28 },
+  // Çelik Akustik: Parlak fosfor bronz tınlama ve 4.0s zengin sustain
+  steel: { attackSec: 0.003, decaySec: 0.85, sustainLevel: 0.42, maxHoldSec: 4.0, releaseSec: 0.30 },
   // Akustik Bas: Dolgun ahşap kontrbas vuruşu
-  bass: { attackSec: 0.005, decaySec: 0.45, sustainLevel: 0.28, maxHoldSec: 0.60, releaseSec: 0.08 }
+  bass: { attackSec: 0.005, decaySec: 0.60, sustainLevel: 0.32, maxHoldSec: 3.2, releaseSec: 0.24 },
+  // Davul: Akustik Kahon & Doğal Perküsyon
+  drums: { attackSec: 0.001, decaySec: 0.20, sustainLevel: 0.05, maxHoldSec: 1.2, releaseSec: 0.15 }
 };
 
 interface ActiveSoloVoice {
@@ -76,7 +79,8 @@ export const INSTRUMENT_METAS: Record<AcousticInstrumentType, InstrumentMeta> = 
   harmonica: { id: 'harmonica', name: 'Mızıka', category: 'reed', icon: '🪗', defaultOctave: 4 },
   nylon: { id: 'nylon', name: 'Sıcak Naylon', category: 'guitar', icon: '🎸', defaultOctave: 3 },
   steel: { id: 'steel', name: 'Çelik Akustik', category: 'guitar', icon: '🎸', defaultOctave: 3 },
-  bass: { id: 'bass', name: 'Akustik Bas', category: 'bass', icon: '🎻', defaultOctave: 2 }
+  bass: { id: 'bass', name: 'Akustik Bas', category: 'bass', icon: '🎻', defaultOctave: 2 },
+  drums: { id: 'drums', name: 'Davul', category: 'percussion', icon: '🥁', defaultOctave: 3 }
 };
 
 export class SampledGuitarEngine {
@@ -92,7 +96,8 @@ export class SampledGuitarEngine {
     harmonica: new Map(),
     nylon: new Map(),
     steel: new Map(),
-    bass: new Map()
+    bass: new Map(),
+    drums: new Map()
   };
 
   private sampleRawData: Record<AcousticInstrumentType, Record<string, string> | null> = {
@@ -102,7 +107,8 @@ export class SampledGuitarEngine {
     harmonica: null,
     nylon: null,
     steel: null,
-    bass: null
+    bass: null,
+    drums: null
   };
 
   private loadProgress: number = 0;
@@ -147,10 +153,13 @@ export class SampledGuitarEngine {
   }
 
   public async loadSamples(type: AcousticInstrumentType): Promise<void> {
+    if (type === 'drums') {
+      return; // Synthesized organically via AcousticPercussion!
+    }
     if (this.sampleBuffers[type].size > 20) return;
 
     try {
-      const fileMap: Record<AcousticInstrumentType, string> = {
+      const fileMap: Record<Exclude<AcousticInstrumentType, 'drums'>, string> = {
         violin: '/samples/violin.json',
         clarinet: '/samples/clarinet.json',
         alto_sax: '/samples/alto_sax.json',
@@ -308,19 +317,19 @@ export class SampledGuitarEngine {
 
     const gainNode = ctx.createGain();
     const env = INSTRUMENT_ENVELOPES[chosenInst] || INSTRUMENT_ENVELOPES.nylon;
-    const peakVolume = Math.min(1.2, velocity * (isMuted ? 0.35 : 0.95));
+    const peakVolume = Math.min(1.2, Math.max(0.1, velocity * (isMuted ? 0.35 : 0.95)));
 
-    gainNode.gain.setValueAtTime(0.001, now);
+    // Natural attack & smooth acoustic decay with setTargetAtTime
+    gainNode.gain.setValueAtTime(0.0001, now);
     gainNode.gain.linearRampToValueAtTime(peakVolume, now + env.attackSec);
 
     if (isMuted) {
-      gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
-      source.stop(now + 0.14);
+      gainNode.gain.setTargetAtTime(0.0001, now + env.attackSec, 0.035);
+      source.stop(now + 0.16);
     } else {
-      // Natural chord decay
-      gainNode.gain.exponentialRampToValueAtTime(peakVolume * env.sustainLevel, now + env.decaySec);
-      gainNode.gain.exponentialRampToValueAtTime(0.0001, now + env.maxHoldSec);
-      source.stop(now + env.maxHoldSec + 0.02);
+      // Natural chord sustain across full measure
+      gainNode.gain.setTargetAtTime(0.0001, now + env.attackSec, env.decaySec * 1.5);
+      source.stop(now + env.maxHoldSec);
     }
 
     source.connect(dynamicFilter);
@@ -355,12 +364,9 @@ export class SampledGuitarEngine {
     const now = Math.max(time ?? ctx.currentTime, ctx.currentTime);
     const dest = destination ?? ctx.destination;
 
-    // 1. Choke previous solo notes so notes don't clash or linger like an organ!
-    this.chokeActiveSoloVoices(now);
-
     const env = INSTRUMENT_ENVELOPES[chosenInst] || INSTRUMENT_ENVELOPES.violin;
 
-    // 2. Virtuoso Grace Note (Çarpma süslemesi):
+    // 1. Virtuoso Grace Note (Çarpma süslemesi):
     if (withGraceNote) {
       const graceMidi = midiNote - (Math.random() > 0.5 ? 2 : 1);
       const graceName = midiToNoteName(graceMidi);
@@ -370,15 +376,15 @@ export class SampledGuitarEngine {
         gSource.buffer = graceBuf;
         const gGain = ctx.createGain();
         gGain.gain.setValueAtTime(velocity * 0.55, now);
-        gGain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+        gGain.gain.setTargetAtTime(0.0001, now, 0.025);
         gSource.connect(gGain);
         gGain.connect(dest);
         gSource.start(now);
-        gSource.stop(now + 0.04);
+        gSource.stop(now + 0.06);
       }
     }
 
-    // 3. Main Solo Note
+    // 2. Main Solo Note
     const mainStartTime = withGraceNote ? now + 0.025 : now;
     const noteName = midiToNoteName(midiNote);
     const buffer = this.sampleBuffers[chosenInst].get(noteName);
@@ -391,13 +397,13 @@ export class SampledGuitarEngine {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
 
-    // 4. Legato Portamento / Slide Detection
+    // 3. Legato Portamento / Slide Detection
     const isLegato = (now - this.lastSoloTime) < 0.22 && this.lastSoloMidi > 0 && Math.abs(midiNote - this.lastSoloMidi) <= 4;
     const legatoPitchDelta = isLegato ? (this.lastSoloMidi - midiNote) * 100 : 0;
     this.lastSoloMidi = midiNote;
     this.lastSoloTime = now;
 
-    // 5. Dynamic Velocity-to-Timbre Tracking Filter
+    // 4. Dynamic Velocity-to-Timbre Tracking Filter
     const dynamicFilter = ctx.createBiquadFilter();
     dynamicFilter.type = 'lowpass';
     const cutoff = 2400 + Math.pow(velocity, 2) * 15500;
@@ -416,15 +422,14 @@ export class SampledGuitarEngine {
     }
 
     const gainNode = ctx.createGain();
-    const peakVolume = Math.min(1.2, velocity * 0.95);
+    const peakVolume = Math.min(1.2, Math.max(0.1, velocity * 0.95));
 
-    // Natural attack & decay curve tailored per acoustic instrument
-    gainNode.gain.setValueAtTime(0.001, mainStartTime);
+    // Natural sustained attack & acoustic decay curve
+    gainNode.gain.setValueAtTime(0.0001, mainStartTime);
     gainNode.gain.linearRampToValueAtTime(peakVolume, mainStartTime + env.attackSec);
-    gainNode.gain.exponentialRampToValueAtTime(peakVolume * env.sustainLevel, mainStartTime + env.decaySec);
-    gainNode.gain.exponentialRampToValueAtTime(0.0001, mainStartTime + env.maxHoldSec);
+    gainNode.gain.setTargetAtTime(0.0001, mainStartTime + env.attackSec, env.decaySec * 1.8);
 
-    // 6. Subtle Delayed Acoustic Vibrato for wind & strings
+    // 5. Subtle Delayed Acoustic Vibrato for wind & strings
     if (chosenInst === 'violin' || chosenInst === 'clarinet' || chosenInst === 'alto_sax' || chosenInst === 'harmonica') {
       try {
         const vibratoRate = chosenInst === 'violin' ? 5.2 : chosenInst === 'harmonica' ? 6.0 : 4.8;
@@ -456,7 +461,7 @@ export class SampledGuitarEngine {
     source.start(mainStartTime);
     source.stop(mainStartTime + env.maxHoldSec + 0.05);
 
-    // Track active voice for keyup release and monophonic crossfade
+    // Track active voice without choking previous notes aggressively
     this.activeSoloVoices.push({
       midi: midiNote,
       source,
@@ -464,6 +469,13 @@ export class SampledGuitarEngine {
       instrument: chosenInst,
       stopTime: mainStartTime + env.maxHoldSec
     });
+
+    if (this.activeSoloVoices.length > 8) {
+      const oldest = this.activeSoloVoices.shift();
+      try {
+        oldest?.gainNode.gain.setTargetAtTime(0.0001, now, 0.04);
+      } catch {}
+    }
 
     return true;
   }

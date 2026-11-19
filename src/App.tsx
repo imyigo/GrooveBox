@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header, AppViewMode } from './components/Header';
-import { ArrangerView } from './components/ArrangerView';
+import { ChordView } from './components/ChordView';
 import { LiveView } from './components/LiveView';
+import { HybridView } from './components/HybridView';
+import { StudioView } from './components/StudioView';
 import { MasterDspRack } from './components/MasterDspRack';
 import { SequencerBar } from './components/SequencerBar';
 import { GUITAR_CHORDS } from './config/chords';
@@ -208,27 +210,30 @@ export const App: React.FC = () => {
         onTogglePercussion={handleTogglePercussion}
       />
 
-      {/* 2. MAIN WORKSPACE (Arranger View OR Live View) */}
+      {/* 2. MAIN WORKSPACE (Akor Modu, Live Modu, Hibrit Mod, Stüdyo Modu) */}
       <main className="flex-1 overflow-hidden p-2 sm:p-2.5 flex flex-col justify-between gap-2 min-h-0">
         <div className="flex-1 min-h-0 overflow-hidden">
-          {viewMode === 'arranger' ? (
-            <ArrangerView
+          {viewMode === 'akor' ? (
+            <ChordView
               sections={sections}
               currentSectionIndex={currentSectionIndex}
-              onSelectSection={handleSelectSection}
               onUpdateSections={handleUpdateSections}
-              autoAdvanceSections={autoAdvanceSections}
-              onToggleAutoAdvance={handleToggleAutoAdvance}
-              currentChordIndex={currentChordIndex}
               activeChord={activeChord}
               onSelectChord={setActiveChord}
               currentRoot={currentRoot}
               onRootChange={setCurrentRoot}
               currentScaleId={currentScaleId}
               onScaleChange={setCurrentScaleId}
-              currentRepeat={currentRepeat}
+              activeStringPluck={activeStringPluck}
+              onPluckNote={(stringIndex: number, fret: number) => {
+                setActiveStringPluck({
+                  stringIndex,
+                  fret,
+                  id: Date.now() + Math.random()
+                });
+              }}
             />
-          ) : (
+          ) : viewMode === 'live' ? (
             <LiveView
               sections={sections}
               currentSectionIndex={currentSectionIndex}
@@ -237,14 +242,6 @@ export const App: React.FC = () => {
               currentRepeat={currentRepeat}
               activeChord={activeChord}
               onSelectChord={setActiveChord}
-              activeStringPluck={activeStringPluck}
-              onPluckNote={(stringIndex, fret) => {
-                setActiveStringPluck({
-                  stringIndex,
-                  fret,
-                  id: Date.now() + Math.random()
-                });
-              }}
               currentRoot={currentRoot}
               onRootChange={setCurrentRoot}
               currentScaleId={currentScaleId}
@@ -253,6 +250,37 @@ export const App: React.FC = () => {
               isPlaying={isPlaying}
               percussionOn={percussionOn}
               onTogglePercussion={handleTogglePercussion}
+            />
+          ) : viewMode === 'hybrid' ? (
+            <HybridView
+              sections={sections}
+              currentSectionIndex={currentSectionIndex}
+              queuedSectionIndex={queuedSectionIndex}
+              currentChordIndex={currentChordIndex}
+              currentRepeat={currentRepeat}
+              activeChord={activeChord}
+              onSelectChord={setActiveChord}
+              currentRoot={currentRoot}
+              onRootChange={setCurrentRoot}
+              currentScaleId={currentScaleId}
+              onScaleChange={setCurrentScaleId}
+              onApplyRecommendedChords={handleApplyRecommendedChords}
+              isPlaying={isPlaying}
+              percussionOn={percussionOn}
+              onTogglePercussion={handleTogglePercussion}
+            />
+          ) : (
+            <StudioView
+              sections={sections}
+              currentSectionIndex={currentSectionIndex}
+              onSelectSection={handleSelectSection}
+              onUpdateSections={handleUpdateSections}
+              autoAdvanceSections={autoAdvanceSections}
+              onToggleAutoAdvance={handleToggleAutoAdvance}
+              currentChordIndex={currentChordIndex}
+              onSelectChord={setActiveChord}
+              currentRoot={currentRoot}
+              currentScaleId={currentScaleId}
             />
           )}
         </div>

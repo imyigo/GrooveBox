@@ -1,5 +1,4 @@
 import React from 'react';
-import { Fretboard } from './Fretboard';
 import { SoloKeyboard } from './SoloKeyboard';
 import { songSequencer } from '../audio/Sequencer';
 import { strumEngine } from '../audio/StrumEngine';
@@ -16,8 +15,6 @@ interface LiveViewProps {
   currentRepeat: number;
   activeChord: GuitarChord;
   onSelectChord: (chord: GuitarChord) => void;
-  activeStringPluck: { stringIndex: number; fret: number; id: number } | null;
-  onPluckNote: (stringIndex: number, fret: number) => void;
   currentRoot: string;
   onRootChange: (root: string) => void;
   currentScaleId: string;
@@ -36,8 +33,6 @@ export const LiveView: React.FC<LiveViewProps> = ({
   currentRepeat,
   activeChord,
   onSelectChord,
-  activeStringPluck,
-  onPluckNote,
   currentRoot,
   onRootChange,
   currentScaleId,
@@ -65,7 +60,7 @@ export const LiveView: React.FC<LiveViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col justify-between gap-2 h-full min-h-0 overflow-y-auto scrollbar-thin font-mono text-neutral-200">
+    <div className="flex flex-col justify-between gap-2.5 h-full min-h-0 overflow-y-auto scrollbar-thin font-mono text-neutral-200">
       {/* 1. ABLETON LIVE SCENE LAUNCHER MATRIX */}
       <div className="bg-[#0b0c10] border-2 border-[#20222e] rounded-xl p-2.5 sm:p-3 shadow-2xl shrink-0">
         <div className="flex items-center justify-between border-b border-[#1c1e28] pb-1.5 mb-2 text-xs">
@@ -141,59 +136,45 @@ export const LiveView: React.FC<LiveViewProps> = ({
         </div>
       </div>
 
-      {/* 2. LIVE CHORD TRIGGER PADS & FRETBOARD */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 flex-1 min-h-0">
-        {/* Left: Live Touch Chord Trigger Pads (Cols 1-5) */}
-        <div className="lg:col-span-5 bg-[#0e0f14] border-2 border-[#20222e] rounded-xl p-2.5 shadow-xl flex flex-col justify-between">
-          <div className="flex items-center justify-between border-b border-[#1c1e28] pb-1 text-xs">
-            <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-              <Music className="w-3.5 h-3.5 text-amber-400" />
-              Canlı Akor Padleri (Live Trigger):
-            </span>
-            <span className="text-[10px] text-neutral-400">Elle Telleme & Akor Çalma</span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 my-1">
-            {currentSection.chords.map((chordId, idx) => {
-              const isPlayingThis = idx === currentChordIndex;
-              const isSounding = activeChord.name === chordId;
-
-              return (
-                <button
-                  key={idx}
-                  onClick={() => handleLiveChordStrum(chordId)}
-                  className={`rounded-xl p-3 border-2 transition-all flex flex-col items-center justify-between h-20 select-none active:scale-95 ${
-                    isPlayingThis
-                      ? 'bg-gradient-to-b from-amber-500 to-amber-600 text-neutral-950 border-white shadow-[0_0_20px_rgba(245,158,11,0.8)]'
-                      : isSounding
-                      ? 'bg-[#1f2230] border-amber-500 text-amber-300'
-                      : 'bg-[#12141c] border-[#222534] text-white hover:border-neutral-500'
-                  }`}
-                >
-                  <span className="text-[10px] text-neutral-400 font-bold">{idx + 1}. Bar</span>
-                  <span className="text-xl font-black font-mono">{chordId}</span>
-                  <span className="text-[9px] text-neutral-400">Vur / Strum</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="text-[10px] text-neutral-400 text-center italic">
-            Canlı performans sırasında padlere tıklayarak gerçek akustik gitar vuruşları yapabilirsiniz.
-          </div>
+      {/* 2. LIVE CHORD TRIGGER PADS (Full Width, Clear Ergonomics) */}
+      <div className="bg-[#0e0f14] border-2 border-[#20222e] rounded-xl p-2.5 shadow-xl shrink-0">
+        <div className="flex items-center justify-between border-b border-[#1c1e28] pb-1.5 mb-2 text-xs">
+          <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+            <Music className="w-3.5 h-3.5 text-amber-400" />
+            Canlı Akor Padleri (Live Trigger):
+          </span>
+          <span className="text-[10px] text-neutral-400">
+            Akorlara basarak canlı ritim ve vuruş yapın
+          </span>
         </div>
 
-        {/* Right: Fretboard & Real String Vibrations (Cols 6-12) */}
-        <div className="lg:col-span-7 bg-[#0e0f14] border-2 border-[#20222e] rounded-xl p-2.5 shadow-xl flex flex-col justify-between min-h-0">
-          <Fretboard
-            chord={activeChord}
-            activeStringPluck={activeStringPluck}
-            onPluckNote={onPluckNote}
-          />
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+          {currentSection.chords.map((chordId, idx) => {
+            const isPlayingThis = idx === currentChordIndex;
+            const isSounding = activeChord.name === chordId;
+
+            return (
+              <button
+                key={idx}
+                onClick={() => handleLiveChordStrum(chordId)}
+                className={`rounded-xl p-2.5 border-2 transition-all flex flex-col items-center justify-between h-18 select-none active:scale-95 ${
+                  isPlayingThis
+                    ? 'bg-gradient-to-b from-amber-500 to-amber-600 text-neutral-950 border-white shadow-[0_0_20px_rgba(245,158,11,0.8)]'
+                    : isSounding
+                    ? 'bg-[#1f2230] border-amber-500 text-amber-300'
+                    : 'bg-[#12141c] border-[#222534] text-white hover:border-neutral-500'
+                }`}
+              >
+                <span className="text-[10px] text-neutral-400 font-bold">{idx + 1}. Bar</span>
+                <span className="text-lg font-black font-mono">{chordId}</span>
+                <span className="text-[9px] text-neutral-400">Vur / Strum</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* 3. FL STUDIO 3-ROW COMPUTER KEYBOARD SOLO ENGINE (Zero Scroll Compact) */}
+      {/* 3. FL STUDIO 3-ROW COMPUTER KEYBOARD SOLO ENGINE & ACOUSTIC DRUM KIT */}
       <div className="shrink-0">
         <SoloKeyboard
           currentRoot={currentRoot}

@@ -195,6 +195,22 @@ export class AudioEngine {
   ): void {
     if (!this.ctx) this.init();
     const playTime = time ?? this.ctx!.currentTime;
+
+    // Direct drum percussion synthesis if Davul is selected
+    if (sampledGuitarEngine.getSoloInstrument() === 'drums') {
+      const drumTypes: ('kick' | 'snare' | 'hihat_closed' | 'hihat_open' | 'tambourine' | 'wood')[] = [
+        'kick',
+        'snare',
+        'hihat_closed',
+        'hihat_open',
+        'tambourine',
+        'wood'
+      ];
+      const hit = drumTypes[Math.abs(midi) % drumTypes.length];
+      this.playDrumHit(hit, playTime, velocity);
+      return;
+    }
+
     const dest = this.soloSubGain || this.bodyEqHigh;
     sampledGuitarEngine.playSoloNote(
       midi,
@@ -204,6 +220,40 @@ export class AudioEngine {
       undefined,
       withGraceNote
     );
+  }
+
+  /**
+   * Plays a direct acoustic drum hit (Kick, Snare, HiHats, Tambourine, Woodblock)
+   */
+  public playDrumHit(
+    hitType: 'kick' | 'snare' | 'hihat_closed' | 'hihat_open' | 'tambourine' | 'wood',
+    time?: number,
+    velocity: number = 0.9
+  ): void {
+    if (!this.ctx) this.init();
+    const playTime = time ?? this.ctx!.currentTime;
+    if (!this.percussion) return;
+
+    switch (hitType) {
+      case 'kick':
+        this.percussion.playCajonBass(playTime, velocity);
+        break;
+      case 'snare':
+        this.percussion.playCajonSlap(playTime, velocity);
+        break;
+      case 'hihat_closed':
+        this.percussion.playShaker(playTime, velocity, false, false);
+        break;
+      case 'hihat_open':
+        this.percussion.playShaker(playTime, velocity, true, true);
+        break;
+      case 'tambourine':
+        this.percussion.playTambourine(playTime, velocity);
+        break;
+      case 'wood':
+        this.percussion.playWoodBlock(playTime, velocity);
+        break;
+    }
   }
 
   /**

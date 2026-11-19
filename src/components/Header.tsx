@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Play, Square, Guitar, CheckCircle2, Drum, Piano, Layers } from 'lucide-react';
+import { Volume2, VolumeX, Play, Square, Guitar, CheckCircle2, Drum, Layers, Zap, Radio, Sliders } from 'lucide-react';
 import { GUITAR_PRESETS } from '../config/presets';
 import { BodyPreset } from '../types';
 import { sampledGuitarEngine, AcousticInstrumentType } from '../audio/SampledGuitarEngine';
 
-export type AppViewMode = 'arranger' | 'live';
+export type AppViewMode = 'akor' | 'live' | 'hybrid' | 'studio';
 
 interface HeaderProps {
   isPlaying: boolean;
@@ -15,7 +15,7 @@ interface HeaderProps {
   onVolumeChange: (vol: number) => void;
   chordInstrument: AcousticInstrumentType;
   onChordInstrumentChange: (type: AcousticInstrumentType) => void;
-  // Mode Switcher (Aranje vs Live)
+  // 4 Modes: Akor, Live, Hibrit, Stüdyo
   viewMode: AppViewMode;
   onViewModeChange: (mode: AppViewMode) => void;
   // Prominent Rhythm Toggle
@@ -91,32 +91,58 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* CENTER: WORKFLOW MODE SWITCHER (Aranje Modu vs Live Modu) */}
-      <div className="flex items-center bg-neutral-950 border-2 border-neutral-800 rounded-xl p-1 gap-1.5 shadow-inner">
+      {/* CENTER: 4-MODE WORKFLOW SWITCHER (Akor, Live, Hibrit, Stüdyo) */}
+      <div className="flex items-center bg-neutral-950 border-2 border-neutral-800 rounded-xl p-1 gap-1 shadow-inner">
         <button
-          onClick={() => onViewModeChange('arranger')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-            viewMode === 'arranger'
+          onClick={() => onViewModeChange('akor')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+            viewMode === 'akor'
               ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-950/40'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
           }`}
-          title="Beste yapımı, şarkı zaman çizelgesi, gamlar ve müzik teorisine uygun 7 derece diatonik akorlar"
+          title="7 Derece Diatonik Akor Matrisi, Kadanslar ve Fretboard"
         >
           <Layers className="w-3.5 h-3.5" />
-          <span>🎼 ARANJE MODU</span>
+          <span>🎼 AKOR</span>
         </button>
 
         <button
           onClick={() => onViewModeChange('live')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
             viewMode === 'live'
               ? 'bg-emerald-500 text-neutral-950 shadow-md shadow-emerald-950/40'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
           }`}
-          title="Ableton canlı sahne fırlatıcı, canlı akor padleri, klavye ve usta solo doğaçlama"
+          title="Ableton Sahne Fırlatıcı, Canlı Akor Padleri ve Solo/Davul Klavyesi"
         >
-          <Piano className="w-3.5 h-3.5" />
-          <span>🎛️ LIVE MODU</span>
+          <Radio className="w-3.5 h-3.5" />
+          <span>🎛️ LIVE</span>
+        </button>
+
+        <button
+          onClick={() => onViewModeChange('hybrid')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+            viewMode === 'hybrid'
+              ? 'bg-cyan-500 text-neutral-950 shadow-md shadow-cyan-950/40'
+              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
+          }`}
+          title="Akor + Solo + Ritim aynı ekranda hibrit groovebox çalışma alanı"
+        >
+          <Zap className="w-3.5 h-3.5" />
+          <span>⚡ HİBRİT</span>
+        </button>
+
+        <button
+          onClick={() => onViewModeChange('studio')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+            viewMode === 'studio'
+              ? 'bg-purple-500 text-neutral-950 shadow-md shadow-purple-950/40'
+              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
+          }`}
+          title="Şarkı Dizilimi (Timeline Arrangement), Kısımları ekleme/çıkarma ve şarkı kurgusu"
+        >
+          <Sliders className="w-3.5 h-3.5" />
+          <span>🎙️ STÜDYO</span>
         </button>
       </div>
 
