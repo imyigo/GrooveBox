@@ -89,11 +89,26 @@ export const App: React.FC = () => {
   }, []);
 
   // Handlers
-  const handleTogglePlay = useCallback(() => {
-    audioEngine.unlock();
-    const playing = songSequencer.toggle();
+  const handleTogglePlay = useCallback(async () => {
+    await audioEngine.unlock();
+    const playing = await songSequencer.toggle();
     setIsPlaying(playing);
   }, []);
+
+  // Global Spacebar Transport (Play / Stop) DAW Standard
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+        return;
+      }
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        handleTogglePlay();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [handleTogglePlay]);
 
   const handleBpmChange = (newBpm: number) => {
     setBpm(newBpm);

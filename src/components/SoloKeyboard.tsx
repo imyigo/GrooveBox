@@ -124,6 +124,11 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
         return;
       }
 
+      // Allow Spacebar for DAW Riff Play/Stop transport without interference
+      if (e.code === 'Space' || e.key === ' ') {
+        return;
+      }
+
       // 1. Block OS keyboard auto-repeat completely!
       if (e.repeat) {
         e.preventDefault();

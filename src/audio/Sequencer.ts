@@ -103,16 +103,21 @@ export class SongSequencer {
   private onStepListeners: ((state: SequencerState) => void)[] = [];
   private onStringPluckListeners: ((stringIndex: number, fret: number) => void)[] = [];
 
-  public start(): void {
+  public async start(): Promise<void> {
     if (this.isRunning) return;
+    await audioEngine.unlock();
     const ctx = audioEngine.getContext();
-    audioEngine.unlock();
 
     this.isRunning = true;
     this.currentStep = 0;
     this.currentChordIndex = 0;
     this.currentRepeat = 0;
     this.nextStepTime = ctx.currentTime + 0.05;
+
+    if (this.timerId !== null) {
+      clearInterval(this.timerId);
+      this.timerId = null;
+    }
 
     this.timerId = window.setInterval(() => this.scheduler(), this.lookaheadMs);
     this.notifyStep(null);
@@ -129,12 +134,12 @@ export class SongSequencer {
     this.notifyStep(null);
   }
 
-  public toggle(): boolean {
+  public async toggle(): Promise<boolean> {
     if (this.isRunning) {
       this.stop();
       return false;
     } else {
-      this.start();
+      await this.start();
       return true;
     }
   }
@@ -301,7 +306,21 @@ export class SongSequencer {
   }
 
   private scheduler(): void {
+    if (!this.isRunning) return;
     const ctx = audioEngine.getContext();
+
+    // Context check: If context is suspended or closed, do not schedule past timestamps
+    if (ctx.state !== 'running') {
+      return;
+    }
+
+    // Critical Clock Drift Guard:
+    // If nextStepTime has fallen behind currentTime (e.g. browser tab unfocused, context resume delay)
+    // resync nextStepTime immediately so we never spam hundreds of steps in a single tick!
+    if (this.nextStepTime < ctx.currentTime - 0.05) {
+      this.nextStepTime = ctx.currentTime + 0.01;
+    }
+
     while (this.nextStepTime < ctx.currentTime + this.scheduleAheadSec) {
       this.scheduleStep(this.currentSectionIndex, this.currentChordIndex, this.currentStep, this.nextStepTime);
       this.advanceStep();

@@ -48,7 +48,7 @@ export class AcousticStringVoice {
 
     stringGain.gain.setValueAtTime(0.0001, now);
     stringGain.gain.linearRampToValueAtTime(peakVolume, now + attackTime);
-    stringGain.gain.exponentialRampToValueAtTime(0.0001, now + baseDecay);
+    stringGain.gain.setTargetAtTime(0.0001, now + attackTime, isMuted ? 0.03 : baseDecay * 0.45);
 
     // Auto cleanup nodes after note finishes
     setTimeout(() => {
@@ -57,7 +57,7 @@ export class AcousticStringVoice {
       } catch {
         // Ignored
       }
-    }, (baseDecay + 0.2) * 1000);
+    }, (baseDecay + 0.5) * 1000);
 
     // 2. Pick Attack Transient (The crisp "click" of the plectrum hitting the bronze wrap)
     const pickBufferLength = Math.floor(ctx.sampleRate * 0.025); // 25ms pick noise
@@ -79,14 +79,14 @@ export class AcousticStringVoice {
 
     const pickGain = ctx.createGain();
     pickGain.gain.setValueAtTime(velocity * (isMuted ? 0.6 : 0.35), now);
-    pickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.025);
+    pickGain.gain.setTargetAtTime(0.0001, now, 0.008);
 
     pickSource.connect(pickFilter);
     pickFilter.connect(pickGain);
     pickGain.connect(stringGain);
 
     pickSource.start(now);
-    pickSource.stop(now + 0.03);
+    pickSource.stop(now + 0.04);
 
     // 3. String Body Tone Generators (Harmonic additive modeling with Karplus decay)
     // Acoustic bronze strings have a rich fundamental and specific harmonic spectrum
@@ -111,13 +111,13 @@ export class AcousticStringVoice {
 
       hGain.gain.setValueAtTime(0.0001, now);
       hGain.gain.linearRampToValueAtTime(hVol, now + attackTime);
-      hGain.gain.exponentialRampToValueAtTime(0.0001, now + hDecay);
+      hGain.gain.setTargetAtTime(0.0001, now + attackTime, isMuted ? 0.025 : hDecay * 0.45);
 
       osc.connect(hGain);
       hGain.connect(stringGain);
 
       osc.start(now);
-      osc.stop(now + hDecay + 0.05);
+      osc.stop(now + hDecay + 0.1);
     });
 
     // 4. Acoustic Steel String Filter (Dynamic Lowpass that opens on strike and closes as string dies)
@@ -128,9 +128,10 @@ export class AcousticStringVoice {
       : Math.min(12000, freq * 14 * brightness);
 
     toneFilter.frequency.setValueAtTime(cutoff, now);
-    toneFilter.frequency.exponentialRampToValueAtTime(
+    toneFilter.frequency.setTargetAtTime(
       Math.max(200, freq * 2.2),
-      now + (isMuted ? 0.1 : 1.2)
+      now,
+      isMuted ? 0.03 : 0.35
     );
     toneFilter.Q.setValueAtTime(1.8, now);
 
@@ -149,11 +150,11 @@ export class AcousticStringVoice {
     const thumpOsc = ctx.createOscillator();
     thumpOsc.type = 'sine';
     thumpOsc.frequency.setValueAtTime(130, now);
-    thumpOsc.frequency.exponentialRampToValueAtTime(45, now + 0.08);
+    thumpOsc.frequency.setTargetAtTime(45, now, 0.03);
 
     const thumpGain = ctx.createGain();
     thumpGain.gain.setValueAtTime(velocity * 0.9, now);
-    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    thumpGain.gain.setTargetAtTime(0.0001, now, 0.04);
 
     thumpOsc.connect(thumpGain);
     thumpGain.connect(this.outputNode);
