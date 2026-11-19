@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Volume2, VolumeX, Play, Square, Guitar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Volume2, VolumeX, Play, Square, Guitar, CheckCircle2 } from 'lucide-react';
 import { GUITAR_PRESETS } from '../config/presets';
 import { BodyPreset } from '../types';
+import { sampledGuitarEngine } from '../audio/SampledGuitarEngine';
 
 interface HeaderProps {
   isPlaying: boolean;
@@ -22,6 +23,15 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [prevVol, setPrevVol] = useState(volume);
+  const [sampleProgress, setSampleProgress] = useState(0);
+  const [samplesReady, setSamplesReady] = useState(false);
+
+  useEffect(() => {
+    return sampledGuitarEngine.onProgress((prog, ready) => {
+      setSampleProgress(prog);
+      setSamplesReady(ready);
+    });
+  }, []);
 
   const toggleMute = () => {
     if (isMuted) {
@@ -47,9 +57,16 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2">
             <h1 className="font-bold text-lg tracking-tight text-white flex items-center gap-2">
               Acoustic Riff Studio
-              <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold tracking-wider">
-                Web Audio Engine
-              </span>
+              {samplesReady ? (
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold tracking-wider flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Gerçek Stüdyo Akustik
+                </span>
+              ) : (
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold tracking-wider animate-pulse">
+                  Kayıtlar Yükleniyor (%{sampleProgress})
+                </span>
+              )}
             </h1>
           </div>
           <p className="text-xs text-neutral-400">

@@ -30,7 +30,7 @@ export class StrumEngine {
         if (fret >= 0) {
           const freq = getFretFrequency(s, fret);
           const stringDelay = s * 0.006;
-          audioEngine.pluckString(s, freq, startTime + stringDelay, baseVelocity * 0.5, true);
+          audioEngine.pluckString(s, fret, freq, startTime + stringDelay, baseVelocity * 0.5, true);
           if (options.onStringPlucked) {
             options.onStringPlucked(s, fret);
           }
@@ -99,7 +99,7 @@ export class StrumEngine {
 
       stringVel = Math.min(1.0, Math.max(0.1, stringVel));
 
-      audioEngine.pluckString(stringIndex, freq, stringTime, stringVel, false);
+      audioEngine.pluckString(stringIndex, fret, freq, stringTime, stringVel, false);
 
       if (options.onStringPlucked) {
         // Schedule callback for UI animation

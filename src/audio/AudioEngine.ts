@@ -1,5 +1,6 @@
 import { AcousticStringVoice } from './AcousticString';
 import { createAcousticBodyImpulse } from './ImpulseGenerator';
+import { sampledGuitarEngine, getGuitarMidi } from './SampledGuitarEngine';
 import { BodyPreset } from '../types';
 
 export class AudioEngine {
@@ -122,8 +123,7 @@ export class AudioEngine {
     this.chorusDelay.connect(this.chorusGain);
     this.chorusGain.connect(this.limiter);
 
-    // 4. Create 6 String Voices with natural acoustic stereo spread
-    // Low strings placed slightly left, high strings slightly right
+    // 4. Create 6 String Stereo Panners
     const panPositions = [-0.35, -0.2, -0.08, 0.08, 0.2, 0.35];
 
     this.stringPanners = [];
@@ -140,6 +140,9 @@ export class AudioEngine {
       const targetNode = panner ? panner : this.bodyEqLow;
       this.stringVoices.push(new AcousticStringVoice(ctx, targetNode));
     }
+
+    // Initialize Real Sample Engine
+    sampledGuitarEngine.init(ctx);
 
     return ctx;
   }
@@ -218,27 +221,43 @@ export class AudioEngine {
   }
 
   /**
-   * Triggers an individual acoustic string pluck
+   * Triggers an individual acoustic string pluck using real studio recordings
    */
   public pluckString(
     stringIndex: number,
+    fret: number,
     freq: number,
     time?: number,
     velocity: number = 0.85,
     isMuted: boolean = false
   ): void {
     if (!this.ctx) this.init();
-    if (stringIndex < 0 || stringIndex >= 6 || freq <= 0) return;
+    if (stringIndex < 0 || stringIndex >= 6 || fret < 0) return;
 
     const playTime = time ?? this.ctx!.currentTime;
-    this.stringVoices[stringIndex].trigger(
-      freq,
+    const targetNode = this.stringPanners[stringIndex] || this.bodyEqLow;
+
+    // 1. Try playing real studio recorded acoustic guitar sample
+    const midiNote = getGuitarMidi(stringIndex, fret);
+    const playedSample = sampledGuitarEngine.playNote(
+      midiNote,
       playTime,
       velocity,
-      stringIndex,
-      isMuted,
-      this.preset.brightness
+      targetNode,
+      isMuted
     );
+
+    // 2. If sample not yet decoded or available, use physical modeling fallback
+    if (!playedSample) {
+      this.stringVoices[stringIndex].trigger(
+        freq,
+        playTime,
+        velocity,
+        stringIndex,
+        isMuted,
+        this.preset.brightness
+      );
+    }
   }
 
   /**
@@ -247,7 +266,6 @@ export class AudioEngine {
   public triggerPercussion(time?: number, velocity: number = 0.9): void {
     if (!this.ctx) this.init();
     const playTime = time ?? this.ctx!.currentTime;
-    // Low E voice handles body slap
     this.stringVoices[0].triggerPerccusion(playTime, velocity);
   }
 }

@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { GuitarChord } from '../types';
 import { strumEngine } from '../audio/StrumEngine';
 import { audioEngine } from '../audio/AudioEngine';
+import { getFretFrequency } from '../config/chords';
 import { ArrowDown, ArrowUp, Hand, Disc3 } from 'lucide-react';
 
 interface VirtualStrummerProps {
@@ -59,8 +60,8 @@ export const VirtualStrummer: React.FC<VirtualStrummerProps> = ({
         const fret = activeChord.frets[stringIdx];
         if (fret >= 0) {
           audioEngine.unlock();
-          const freq = activeChord.frets[stringIdx];
-          audioEngine.pluckString(stringIdx, freq, undefined, 0.9, false);
+          const freq = getFretFrequency(stringIdx, fret);
+          audioEngine.pluckString(stringIdx, fret, freq, undefined, 0.9, false);
           onStringPlucked?.(stringIdx, fret);
           setLastAction(`Tel ${stringNum} çekildi`);
         }

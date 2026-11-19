@@ -37,7 +37,7 @@ export const Fretboard: React.FC<FretboardProps> = ({
   const handleStringClick = (stringIndex: number, fret: number) => {
     audioEngine.unlock();
     const freq = getFretFrequency(stringIndex, fret);
-    audioEngine.pluckString(stringIndex, freq, undefined, 0.9, false);
+    audioEngine.pluckString(stringIndex, fret, freq, undefined, 0.9, false);
     setVibrating((prev) => ({ ...prev, [stringIndex]: true }));
     setTimeout(() => {
       setVibrating((prev) => ({ ...prev, [stringIndex]: false }));
