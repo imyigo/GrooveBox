@@ -17,6 +17,7 @@ export interface SequencerState {
   isPlaying: boolean;
   bpm: number;
   currentSectionIndex: number;
+  queuedSectionIndex: number | null;
   currentChordIndex: number;
   currentStep: number;
   currentBeat: StrumBeat | null;
@@ -76,6 +77,7 @@ export class SongSequencer {
   // Sections (Kısımlar / Scenes)
   private sections: SongSection[] = [...DEFAULT_SONG_SECTIONS];
   private currentSectionIndex: number = 0;
+  private queuedSectionIndex: number | null = null;
   private autoAdvanceSections: boolean = true; // Song Chain mode
   private currentRepeat: number = 0;
 
@@ -178,9 +180,29 @@ export class SongSequencer {
   public setSectionIndex(index: number): void {
     if (index >= 0 && index < this.sections.length) {
       this.currentSectionIndex = index;
+      this.queuedSectionIndex = null;
       this.currentChordIndex = 0;
       this.currentRepeat = 0;
     }
+  }
+
+  /**
+   * Live Scene Launch: Queues the scene to launch cleanly at the next 1st beat of the bar.
+   * If instant is true, transitions immediately.
+   */
+  public queueSection(index: number, instant: boolean = false): void {
+    if (index < 0 || index >= this.sections.length) return;
+    if (instant || !this.isRunning) {
+      this.setSectionIndex(index);
+      this.notifyStep(null);
+    } else {
+      this.queuedSectionIndex = index;
+      this.notifyStep(null);
+    }
+  }
+
+  public getQueuedSectionIndex(): number | null {
+    return this.queuedSectionIndex;
   }
 
   public setAutoAdvanceSections(advance: boolean): void {
@@ -314,7 +336,7 @@ export class SongSequencer {
       if (mode === 'shaker-only') {
         if (step % 2 === 0) {
           const isAccent = step % 4 === 0;
-          audioEngine.percussion.playShaker(time, isAccent ? 0.45 : 0.25, isAccent);
+          audioEngine.percussion.playShaker(time, isAccent ? 0.45 : 0.25, isAccent, !isAccent);
         }
         if (step === 4 || step === 12) {
           audioEngine.percussion.playTambourine(time, 0.4);
@@ -330,7 +352,8 @@ export class SongSequencer {
           audioEngine.percussion.playTambourine(time, 0.65);
         }
         if (step % 2 === 0) {
-          audioEngine.percussion.playShaker(time, step % 4 === 0 ? 0.4 : 0.2, step % 4 === 0);
+          const isAccent = step % 4 === 0;
+          audioEngine.percussion.playShaker(time, isAccent ? 0.4 : 0.22, isAccent, !isAccent);
         }
       } else if (mode === 'full') {
         // Full acoustic beat: syncopated kick/bass + slap + jingle
@@ -341,7 +364,8 @@ export class SongSequencer {
         } else if (step === 8) audioEngine.percussion.playCajonBass(time, 0.85);
 
         if (step % 2 === 0) {
-          audioEngine.percussion.playShaker(time, 0.35, step % 4 === 0);
+          const isAccent = step % 4 === 0;
+          audioEngine.percussion.playShaker(time, isAccent ? 0.38 : 0.22, isAccent, !isAccent);
         }
       } else if (mode === 'flamenco') {
         // Energetic Flamenco / Rumba
@@ -351,7 +375,7 @@ export class SongSequencer {
           audioEngine.percussion.playTambourine(time, 0.7);
           audioEngine.percussion.playCajonSlap(time, 0.7);
         }
-        audioEngine.percussion.playShaker(time, 0.3, false);
+        audioEngine.percussion.playShaker(time, 0.3, false, step % 4 !== 0);
       }
     }
 
@@ -391,6 +415,17 @@ export class SongSequencer {
     this.currentStep++;
     if (this.currentStep >= 16) {
       this.currentStep = 0;
+
+      // Ableton Live style Quantized Scene Launch:
+      // If a new scene is queued, cleanly transition at the exact 1st beat of the bar!
+      if (this.queuedSectionIndex !== null) {
+        this.currentSectionIndex = this.queuedSectionIndex;
+        this.queuedSectionIndex = null;
+        this.currentChordIndex = 0;
+        this.currentRepeat = 0;
+        return;
+      }
+
       const section = this.getCurrentSection();
       const nextChordIdx = this.currentChordIndex + 1;
 
@@ -418,6 +453,7 @@ export class SongSequencer {
       isPlaying: this.isRunning,
       bpm: this.bpm,
       currentSectionIndex: this.currentSectionIndex,
+      queuedSectionIndex: this.queuedSectionIndex,
       currentChordIndex: this.currentChordIndex,
       currentStep: this.currentStep,
       currentBeat: beat,

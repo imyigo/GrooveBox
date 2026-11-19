@@ -61,3 +61,36 @@ export interface StringState {
   isVibrating: boolean;
   amplitude: number;
 }
+
+export type AppGrooveboxMode = 'arranger' | 'live';
+
+export type SoloHarmonyMode = 'chord-tones' | 'pentatonic' | 'smart-lick' | 'free-scale';
+
+export interface MasterDspSettings {
+  reverbWet: number; // 0.0 to 0.5 (default 0.04)
+  reverbDecay: number; // 0.1 to 10.0 (default 8.0)
+  strumSpeedMs: number; // 10 to 60ms (default 22)
+  brightness: number; // 0.1 to 1.0 (default 0.75)
+  bodyResonance: number; // 0.1 to 1.0 (default 0.85)
+  drumVolume: number; // 0.0 to 1.2 (default 0.85)
+  chordVolume: number; // 0.0 to 1.2 (default 0.85)
+  soloVolume: number; // 0.0 to 1.2 (default 0.95)
+}
+
+export interface DiatonicChordInfo {
+  degree: number; // 1 to 7
+  roman: string; // e.g. "i", "ii°", "III", "iv", "V", "VI", "VII"
+  chordId: string; // e.g. "Am"
+  displayName: string;
+  role: 'tonic' | 'subdominant' | 'dominant' | 'mediant';
+  roleLabel: string; // e.g. "Tonik (Karar)", "Subdominant (Ayrılış)", "Dominant (Çözülüm)"
+  color: string;
+}
+
+export interface CadencePreset {
+  id: string;
+  name: string;
+  genre: string;
+  chords: string[];
+  description: string;
+}

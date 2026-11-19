@@ -36,6 +36,39 @@ export interface InstrumentMeta {
   defaultOctave: number;
 }
 
+export interface InstrumentEnvelope {
+  attackSec: number;
+  decaySec: number;
+  sustainLevel: number;
+  maxHoldSec: number;
+  releaseSec: number;
+}
+
+export const INSTRUMENT_ENVELOPES: Record<AcousticInstrumentType, InstrumentEnvelope> = {
+  // Keman: Doğal yay sürtünmesi, sıcak ahşap rezonans, kontrollü serbest bırakma
+  violin: { attackSec: 0.035, decaySec: 0.42, sustainLevel: 0.70, maxHoldSec: 0.85, releaseSec: 0.12 },
+  // Klarnet: Gerçek ahşap kamış dili, çevik Türk/Caz klarnet solosu, sarkmayan duruş
+  clarinet: { attackSec: 0.020, decaySec: 0.38, sustainLevel: 0.68, maxHoldSec: 0.72, releaseSec: 0.09 },
+  // Saksafon: Sıcak pirinç/kamış ısırması, dengeli nefes sönümü
+  alto_sax: { attackSec: 0.018, decaySec: 0.40, sustainLevel: 0.70, maxHoldSec: 0.75, releaseSec: 0.10 },
+  // Mızıka: Hızlı blues kamış tepkisi, net ve keskin artikülasyon
+  harmonica: { attackSec: 0.012, decaySec: 0.32, sustainLevel: 0.60, maxHoldSec: 0.60, releaseSec: 0.08 },
+  // Sıcak Naylon: Gerçek parmak/tırnak çekişi - vuruştan hemen sonra doğal sönüme geçer (ASLA uzayıp boğulmaz)
+  nylon: { attackSec: 0.004, decaySec: 0.45, sustainLevel: 0.20, maxHoldSec: 0.60, releaseSec: 0.07 },
+  // Çelik Akustik: Parlak bronz tel vuruşu, berrak sönüm
+  steel: { attackSec: 0.003, decaySec: 0.50, sustainLevel: 0.25, maxHoldSec: 0.65, releaseSec: 0.08 },
+  // Akustik Bas: Dolgun ahşap kontrbas vuruşu
+  bass: { attackSec: 0.005, decaySec: 0.45, sustainLevel: 0.28, maxHoldSec: 0.60, releaseSec: 0.08 }
+};
+
+interface ActiveSoloVoice {
+  midi: number;
+  source: AudioBufferSourceNode;
+  gainNode: GainNode;
+  instrument: AcousticInstrumentType;
+  stopTime: number;
+}
+
 export const INSTRUMENT_METAS: Record<AcousticInstrumentType, InstrumentMeta> = {
   violin: { id: 'violin', name: 'Keman', category: 'strings', icon: '🎻', defaultOctave: 4 },
   clarinet: { id: 'clarinet', name: 'Klarnet', category: 'woodwind', icon: '🎷', defaultOctave: 4 },
@@ -74,6 +107,9 @@ export class SampledGuitarEngine {
 
   private loadProgress: number = 0;
   private onProgressListeners: ((progress: number, isLoaded: boolean) => void)[] = [];
+  private activeSoloVoices: ActiveSoloVoice[] = [];
+  private lastSoloMidi: number = -1;
+  private lastSoloTime: number = 0;
 
   public init(ctx: AudioContext): void {
     this.ctx = ctx;
@@ -181,7 +217,55 @@ export class SampledGuitarEngine {
   }
 
   /**
-   * Plays a real recorded note on the chosen instrument
+   * Chokes all active solo voices with a musical 20ms release crossfade
+   * so solo lines never build up muddy overlapping notes.
+   */
+  public chokeActiveSoloVoices(time?: number): void {
+    if (!this.ctx) return;
+    const now = Math.max(time ?? this.ctx.currentTime, this.ctx.currentTime);
+    this.activeSoloVoices.forEach((voice) => {
+      try {
+        voice.gainNode.gain.cancelScheduledValues(now);
+        voice.gainNode.gain.setValueAtTime(voice.gainNode.gain.value, now);
+        voice.gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
+        voice.source.stop(now + 0.03);
+      } catch {
+        // already stopped
+      }
+    });
+    this.activeSoloVoices = [];
+  }
+
+  /**
+   * Stops a specific solo note (on keyup) with authentic acoustic release damping
+   */
+  public stopSoloNote(midi?: number, time?: number): void {
+    if (!this.ctx) return;
+    const now = Math.max(time ?? this.ctx.currentTime, this.ctx.currentTime);
+    const toRemove: ActiveSoloVoice[] = [];
+
+    this.activeSoloVoices.forEach((voice) => {
+      if (midi === undefined || voice.midi === midi) {
+        const env = INSTRUMENT_ENVELOPES[voice.instrument] || INSTRUMENT_ENVELOPES.nylon;
+        const rel = env.releaseSec;
+        try {
+          voice.gainNode.gain.cancelScheduledValues(now);
+          voice.gainNode.gain.setValueAtTime(voice.gainNode.gain.value, now);
+          voice.gainNode.gain.exponentialRampToValueAtTime(0.0001, now + rel);
+          voice.source.stop(now + rel + 0.01);
+        } catch {
+          // already stopped
+        }
+        toRemove.push(voice);
+      }
+    });
+
+    this.activeSoloVoices = this.activeSoloVoices.filter((v) => !toRemove.includes(v));
+  }
+
+  /**
+   * Plays a real recorded note for Chords & Strumming
+   * with velocity-dependent dynamic low-pass filtering and string tension detune.
    */
   public playNote(
     midiNote: number,
@@ -208,23 +292,178 @@ export class SampledGuitarEngine {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
 
+    // 1. Dynamic Velocity-to-Timbre Tracking Filter
+    // Soft touches roll off highs; hard strokes unleash full acoustic bite
+    const dynamicFilter = ctx.createBiquadFilter();
+    dynamicFilter.type = 'lowpass';
+    const cutoff = isMuted ? 3200 : (2600 + Math.pow(velocity, 2) * 15000);
+    dynamicFilter.frequency.setValueAtTime(cutoff, now);
+    dynamicFilter.Q.setValueAtTime(0.7, now);
+
+    // 2. Initial String Tension Detune Spike & Human Micro-Intonation (±3 cents)
+    const humanIntonation = (Math.random() - 0.5) * 5.5;
+    const attackTensionSpike = velocity > 0.75 ? (velocity - 0.75) * 22.0 : 0;
+    source.detune.setValueAtTime(humanIntonation + attackTensionSpike, now);
+    source.detune.linearRampToValueAtTime(humanIntonation, now + 0.038);
+
     const gainNode = ctx.createGain();
-    const peakVolume = Math.min(1.2, velocity * (isMuted ? 0.45 : 0.95));
-    gainNode.gain.setValueAtTime(peakVolume, now);
+    const env = INSTRUMENT_ENVELOPES[chosenInst] || INSTRUMENT_ENVELOPES.nylon;
+    const peakVolume = Math.min(1.2, velocity * (isMuted ? 0.35 : 0.95));
+
+    gainNode.gain.setValueAtTime(0.001, now);
+    gainNode.gain.linearRampToValueAtTime(peakVolume, now + env.attackSec);
 
     if (isMuted) {
-      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+      source.stop(now + 0.14);
     } else {
-      const sustainTime = chosenInst === 'violin' || chosenInst === 'clarinet' ? 2.0 : 1.4;
-      gainNode.gain.setValueAtTime(peakVolume, now + sustainTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, now + buffer.duration);
+      // Natural chord decay
+      gainNode.gain.exponentialRampToValueAtTime(peakVolume * env.sustainLevel, now + env.decaySec);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, now + env.maxHoldSec);
+      source.stop(now + env.maxHoldSec + 0.02);
     }
 
-    source.connect(gainNode);
+    source.connect(dynamicFilter);
+    dynamicFilter.connect(gainNode);
     gainNode.connect(destination);
-
     source.start(now);
-    source.stop(now + (isMuted ? 0.2 : buffer.duration));
+
+    return true;
+  }
+
+  /**
+   * Virtuoso Solo Engine:
+   * Expressive solo note playing with physical acoustic modeling:
+   * - Legato slide (portamento) between consecutive notes
+   * - Velocity-dependent dynamic timber tracking filter
+   * - Initial tension spike & human micro-intonation drift
+   * - Instrument-specific natural release damping
+   * - Subtle delayed vibrato
+   */
+  public playSoloNote(
+    midiNote: number,
+    time?: number,
+    velocity: number = 0.9,
+    destination?: AudioNode,
+    instrument?: AcousticInstrumentType,
+    withGraceNote: boolean = false
+  ): boolean {
+    if (!this.ctx || midiNote < 0) return false;
+
+    const chosenInst = instrument ?? this.currentSoloInstrument;
+    const ctx = this.ctx;
+    const now = Math.max(time ?? ctx.currentTime, ctx.currentTime);
+    const dest = destination ?? ctx.destination;
+
+    // 1. Choke previous solo notes so notes don't clash or linger like an organ!
+    this.chokeActiveSoloVoices(now);
+
+    const env = INSTRUMENT_ENVELOPES[chosenInst] || INSTRUMENT_ENVELOPES.violin;
+
+    // 2. Virtuoso Grace Note (Çarpma süslemesi):
+    if (withGraceNote) {
+      const graceMidi = midiNote - (Math.random() > 0.5 ? 2 : 1);
+      const graceName = midiToNoteName(graceMidi);
+      const graceBuf = this.sampleBuffers[chosenInst].get(graceName);
+      if (graceBuf) {
+        const gSource = ctx.createBufferSource();
+        gSource.buffer = graceBuf;
+        const gGain = ctx.createGain();
+        gGain.gain.setValueAtTime(velocity * 0.55, now);
+        gGain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+        gSource.connect(gGain);
+        gGain.connect(dest);
+        gSource.start(now);
+        gSource.stop(now + 0.04);
+      }
+    }
+
+    // 3. Main Solo Note
+    const mainStartTime = withGraceNote ? now + 0.025 : now;
+    const noteName = midiToNoteName(midiNote);
+    const buffer = this.sampleBuffers[chosenInst].get(noteName);
+
+    if (!buffer) {
+      this.decodeSingleNote(noteName, chosenInst);
+      return false;
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+
+    // 4. Legato Portamento / Slide Detection
+    const isLegato = (now - this.lastSoloTime) < 0.22 && this.lastSoloMidi > 0 && Math.abs(midiNote - this.lastSoloMidi) <= 4;
+    const legatoPitchDelta = isLegato ? (this.lastSoloMidi - midiNote) * 100 : 0;
+    this.lastSoloMidi = midiNote;
+    this.lastSoloTime = now;
+
+    // 5. Dynamic Velocity-to-Timbre Tracking Filter
+    const dynamicFilter = ctx.createBiquadFilter();
+    dynamicFilter.type = 'lowpass';
+    const cutoff = 2400 + Math.pow(velocity, 2) * 15500;
+    dynamicFilter.frequency.setValueAtTime(cutoff, mainStartTime);
+    dynamicFilter.Q.setValueAtTime(0.75, mainStartTime);
+
+    // Initial pitch with legato slide if moving close in pitch
+    if (isLegato && Math.abs(legatoPitchDelta) > 10) {
+      source.detune.setValueAtTime(legatoPitchDelta, mainStartTime);
+      source.detune.linearRampToValueAtTime(0, mainStartTime + 0.038); // 38ms smooth slide
+    } else {
+      const humanIntonation = (Math.random() - 0.5) * 5.0;
+      const attackSpike = velocity > 0.8 ? (velocity - 0.8) * 18.0 : 0;
+      source.detune.setValueAtTime(humanIntonation + attackSpike, mainStartTime);
+      source.detune.linearRampToValueAtTime(humanIntonation, mainStartTime + 0.04);
+    }
+
+    const gainNode = ctx.createGain();
+    const peakVolume = Math.min(1.2, velocity * 0.95);
+
+    // Natural attack & decay curve tailored per acoustic instrument
+    gainNode.gain.setValueAtTime(0.001, mainStartTime);
+    gainNode.gain.linearRampToValueAtTime(peakVolume, mainStartTime + env.attackSec);
+    gainNode.gain.exponentialRampToValueAtTime(peakVolume * env.sustainLevel, mainStartTime + env.decaySec);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, mainStartTime + env.maxHoldSec);
+
+    // 6. Subtle Delayed Acoustic Vibrato for wind & strings
+    if (chosenInst === 'violin' || chosenInst === 'clarinet' || chosenInst === 'alto_sax' || chosenInst === 'harmonica') {
+      try {
+        const vibratoRate = chosenInst === 'violin' ? 5.2 : chosenInst === 'harmonica' ? 6.0 : 4.8;
+        const vibratoDepth = chosenInst === 'violin' ? 12 : chosenInst === 'harmonica' ? 10 : 8; // cents
+
+        const vibratoLfo = ctx.createOscillator();
+        vibratoLfo.frequency.setValueAtTime(vibratoRate, mainStartTime);
+
+        const vibratoGain = ctx.createGain();
+        // Delay vibrato onset by 140ms so note starts clean and warms up naturally!
+        vibratoGain.gain.setValueAtTime(0, mainStartTime);
+        vibratoGain.gain.setValueAtTime(0, mainStartTime + 0.14);
+        vibratoGain.gain.linearRampToValueAtTime(vibratoDepth, mainStartTime + 0.35);
+
+        vibratoLfo.connect(vibratoGain);
+        vibratoGain.connect(source.detune);
+
+        vibratoLfo.start(mainStartTime);
+        vibratoLfo.stop(mainStartTime + env.maxHoldSec + 0.05);
+      } catch {
+        // Vibrato fallback
+      }
+    }
+
+    source.connect(dynamicFilter);
+    dynamicFilter.connect(gainNode);
+    gainNode.connect(dest);
+
+    source.start(mainStartTime);
+    source.stop(mainStartTime + env.maxHoldSec + 0.05);
+
+    // Track active voice for keyup release and monophonic crossfade
+    this.activeSoloVoices.push({
+      midi: midiNote,
+      source,
+      gainNode,
+      instrument: chosenInst,
+      stopTime: mainStartTime + env.maxHoldSec
+    });
 
     return true;
   }

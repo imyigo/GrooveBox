@@ -25,14 +25,16 @@ export class AcousticPercussion {
     const ctx = this.ctx;
     const now = Math.max(time ?? ctx.currentTime, ctx.currentTime);
 
-    // 1. Wooden body tone (sine sweep with fast drop)
+    // 1. Wooden body tone (sine sweep with fast drop and micro human pitch drift)
+    const pitchJitter = (Math.random() - 0.5) * 4.0;
     const osc = ctx.createOscillator();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(85, now);
+    osc.frequency.setValueAtTime(85 + pitchJitter, now);
     osc.frequency.exponentialRampToValueAtTime(42, now + 0.12);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(velocity * 0.9, now);
+    const velJitter = velocity * (0.94 + Math.random() * 0.12);
+    gain.gain.setValueAtTime(velJitter * 0.9, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
 
     // Wooden chamber body filter
@@ -86,8 +88,9 @@ export class AcousticPercussion {
 
   /**
    * Studio Seed Shaker (Akustik Tohum / Marakas Çalkalama)
+   * With authentic forward & backward wrist stroke physics.
    */
-  public playShaker(time?: number, velocity: number = 0.5, isAccent: boolean = false): void {
+  public playShaker(time?: number, velocity: number = 0.5, isAccent: boolean = false, isBackward: boolean = false): void {
     const ctx = this.ctx;
     const now = Math.max(time ?? ctx.currentTime, ctx.currentTime);
 
@@ -95,7 +98,7 @@ export class AcousticPercussion {
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < len; i++) {
-      const decay = Math.exp(-i / (ctx.sampleRate * (isAccent ? 0.015 : 0.008)));
+      const decay = Math.exp(-i / (ctx.sampleRate * (isAccent ? 0.015 : isBackward ? 0.007 : 0.010)));
       data[i] = (Math.random() * 2 - 1) * decay;
     }
 
@@ -103,12 +106,14 @@ export class AcousticPercussion {
     src.buffer = buf;
 
     const filter = ctx.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.setValueAtTime(4500, now);
+    filter.type = isBackward ? 'bandpass' : 'highpass';
+    filter.frequency.setValueAtTime(isBackward ? 3400 : 4800, now);
+    if (isBackward) filter.Q.setValueAtTime(1.5, now);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(velocity * (isAccent ? 0.6 : 0.35), now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    const dynamicVel = velocity * (isAccent ? 0.65 : isBackward ? 0.28 : 0.42);
+    gain.gain.setValueAtTime(dynamicVel, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + (isBackward ? 0.035 : 0.045));
 
     src.connect(filter);
     filter.connect(gain);

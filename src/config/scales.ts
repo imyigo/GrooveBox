@@ -1,3 +1,5 @@
+import { DiatonicChordInfo, CadencePreset } from '../types';
+
 export interface MusicalScale {
   id: string;
   name: string;
@@ -98,3 +100,114 @@ export function getScaleNotes(root: string, scaleId: string, baseOctave: number 
 }
 
 export const KEYBOARD_KEY_MAP = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';'];
+
+/**
+ * Real Music Theory: Calculates the 7 Diatonic Degree Chords
+ * based on selected root and scale/mode.
+ */
+export function getDiatonicChords(root: string, scaleId: string): DiatonicChordInfo[] {
+  const rootSemi = NOTE_TO_SEMITONE[root] ?? 9;
+
+  if (scaleId === 'major') {
+    // I, ii, iii, IV, V, vi, vii°
+    const chordSpecs = [
+      { deg: 1, interval: 0, suffix: '', roman: 'I', role: 'tonic' as const, label: 'Tonik (Karar)', color: 'border-emerald-500 text-emerald-400' },
+      { deg: 2, interval: 2, suffix: 'm', roman: 'ii', role: 'subdominant' as const, label: 'Subdominant (Köprü)', color: 'border-blue-500 text-blue-400' },
+      { deg: 3, interval: 4, suffix: 'm', roman: 'iii', role: 'mediant' as const, label: 'Medyant', color: 'border-indigo-500 text-indigo-400' },
+      { deg: 4, interval: 5, suffix: '', roman: 'IV', role: 'subdominant' as const, label: 'Subdominant (Açılım)', color: 'border-cyan-500 text-cyan-400' },
+      { deg: 5, interval: 7, suffix: '7', roman: 'V7', role: 'dominant' as const, label: 'Dominant (Çözülüm)', color: 'border-amber-500 text-amber-400' },
+      { deg: 6, interval: 9, suffix: 'm', roman: 'vi', role: 'tonic' as const, label: 'Bağıl Minör', color: 'border-purple-500 text-purple-400' },
+      { deg: 7, interval: 11, suffix: 'dim', roman: 'vii°', role: 'dominant' as const, label: 'Sensibl', color: 'border-rose-500 text-rose-400' }
+    ];
+
+    return chordSpecs.map((s) => {
+      const noteName = SEMITONE_TO_NOTE[(rootSemi + s.interval) % 12];
+      const chordId = s.suffix === 'dim' ? 'Bdim' : `${noteName}${s.suffix}`;
+      return {
+        degree: s.deg,
+        roman: s.roman,
+        chordId,
+        displayName: `${noteName} ${s.roman}`,
+        role: s.role,
+        roleLabel: s.label,
+        color: s.color
+      };
+    });
+  }
+
+  // Default Natural Minor / Turkish Minor Modes
+  // i, ii°, III, iv, v/V, VI, VII
+  const isHicaz = scaleId === 'hicaz';
+  const isDorian = scaleId === 'dorian';
+  const isKurdi = scaleId === 'kurdi';
+
+  const minorSpecs = [
+    { deg: 1, interval: 0, suffix: isHicaz ? '' : 'm', roman: isHicaz ? 'I (Hicaz)' : 'i', role: 'tonic' as const, label: 'Karar (Tonik)', color: 'border-emerald-500 text-emerald-400' },
+    { deg: 2, interval: isKurdi || isHicaz ? 1 : 2, suffix: isKurdi ? '' : isHicaz ? '' : 'dim', roman: isKurdi || isHicaz ? 'bII' : 'ii°', role: 'subdominant' as const, label: isKurdi ? 'Kürdi Karakter (bII)' : 'Subdominant', color: 'border-rose-500 text-rose-400' },
+    { deg: 3, interval: isHicaz ? 4 : 3, suffix: isHicaz ? 'dim' : '', roman: isHicaz ? 'III' : 'bIII', role: 'mediant' as const, label: 'Medyant', color: 'border-blue-500 text-blue-400' },
+    { deg: 4, interval: 5, suffix: isDorian ? '' : 'm', roman: isDorian ? 'IV (Dorian)' : 'iv', role: 'subdominant' as const, label: 'Açılım (Subdominant)', color: 'border-cyan-500 text-cyan-400' },
+    { deg: 5, interval: 7, suffix: '7', roman: 'V7', role: 'dominant' as const, label: 'Çözülüm (Dominant 7)', color: 'border-amber-500 text-amber-400' },
+    { deg: 6, interval: isDorian ? 9 : 8, suffix: isDorian ? 'dim' : '', roman: isDorian ? 'vi°' : 'bVI', role: 'mediant' as const, label: 'Duygu (Submedyant)', color: 'border-purple-500 text-purple-400' },
+    { deg: 7, interval: 10, suffix: '', roman: 'bVII', role: 'dominant' as const, label: 'Dominant / Karara Dönüş', color: 'border-yellow-500 text-yellow-400' }
+  ];
+
+  return minorSpecs.map((s) => {
+    const noteName = SEMITONE_TO_NOTE[(rootSemi + s.interval) % 12];
+    let chordId = `${noteName}${s.suffix}`;
+    if (s.suffix === 'dim') chordId = 'Bdim';
+    return {
+      degree: s.deg,
+      roman: s.roman,
+      chordId,
+      displayName: `${noteName} ${s.roman}`,
+      role: s.role,
+      roleLabel: s.label,
+      color: s.color
+    };
+  });
+}
+
+export const CADENCE_PRESETS: CadencePreset[] = [
+  {
+    id: 'anadolu-rock',
+    name: '🎸 Anadolu Rock & Folk',
+    genre: 'Anadolu Rock / Moğollar / Erkin Koray',
+    chords: ['Am', 'Dm', 'G', 'Am'],
+    description: 'i - iv - VII - i: Anadolu müziğinin en güçlü, epik ve sürükleyici akor yürüyüşü.'
+  },
+  {
+    id: 'andalusian-flamenco',
+    name: '💃 Flamenko & İspanyol',
+    genre: 'Andalusian Cadence / Paco de Lucía',
+    chords: ['Am', 'G', 'F', 'E7'],
+    description: 'i - VII - VI - V7: İspanyol ve Akdeniz gitar arpejlerinin efsanevi inişli kadansı.'
+  },
+  {
+    id: 'pop-2000s',
+    name: '🎤 Türkçe Pop 2000\'ler',
+    genre: 'Duman / Mor ve Ötesi / Şebnem Ferah',
+    chords: ['Am', 'F', 'C', 'G'],
+    description: 'i - VI - III - VII: En çok hit üreten, duygusal ve akılda kalıcı 4-akor altın şablonu.'
+  },
+  {
+    id: 'jazz-soul',
+    name: '🎷 Akustik Caz & Bossa',
+    genre: 'Caz / Bossa Nova / Akustik Soul',
+    chords: ['Dm7', 'G7', 'Cmaj7', 'Am7'],
+    description: 'ii7 - V7 - Imaj7 - vi7: Kusursuz caz çözülümü ve yumuşak akustik renkler.'
+  },
+  {
+    id: 'epic-ballad',
+    name: '🌅 Epik Yükseliş Baladı',
+    genre: 'Akustik Balad / Film Müziği',
+    chords: ['C', 'G', 'Am', 'F'],
+    description: 'I - V - vi - IV: Pop ve film müziklerinin en ilham verici, umut dolu yürüyüşü.'
+  },
+  {
+    id: 'hicaz-mystic',
+    name: '🌾 Hicaz & Doğu Akdeniz',
+    genre: 'Sezen Aksu / Özgün Müzik / Hicaz',
+    chords: ['Am', 'Bb', 'Dm', 'E7'],
+    description: 'i - bII - iv - V7: Doğu Akdeniz ve Anadolu makamlarının büyüleyici hüznü.'
+  }
+];

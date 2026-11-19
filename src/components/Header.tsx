@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Play, Square, Guitar, CheckCircle2, Drum, Piano, LayoutGrid } from 'lucide-react';
+import { Volume2, VolumeX, Play, Square, Guitar, CheckCircle2, Drum, Piano, Layers } from 'lucide-react';
 import { GUITAR_PRESETS } from '../config/presets';
 import { BodyPreset } from '../types';
 import { sampledGuitarEngine, AcousticInstrumentType } from '../audio/SampledGuitarEngine';
 
-export type AppViewMode = 'player' | 'solo' | 'full';
+export type AppViewMode = 'arranger' | 'live';
 
 interface HeaderProps {
   isPlaying: boolean;
@@ -15,7 +15,7 @@ interface HeaderProps {
   onVolumeChange: (vol: number) => void;
   chordInstrument: AcousticInstrumentType;
   onChordInstrumentChange: (type: AcousticInstrumentType) => void;
-  // Mode Switcher
+  // Mode Switcher (Aranje vs Live)
   viewMode: AppViewMode;
   onViewModeChange: (mode: AppViewMode) => void;
   // Prominent Rhythm Toggle
@@ -91,45 +91,32 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* CENTER: MODE SWITCHER (Player Modu vs Solo Modu vs Tam Stüdyo) */}
-      <div className="flex items-center bg-neutral-950 border-2 border-neutral-800 rounded-xl p-1 gap-1 shadow-inner">
+      {/* CENTER: WORKFLOW MODE SWITCHER (Aranje Modu vs Live Modu) */}
+      <div className="flex items-center bg-neutral-950 border-2 border-neutral-800 rounded-xl p-1 gap-1.5 shadow-inner">
         <button
-          onClick={() => onViewModeChange('player')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-            viewMode === 'player'
+          onClick={() => onViewModeChange('arranger')}
+          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+            viewMode === 'arranger'
               ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-950/40'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
           }`}
-          title="Ritim, akor dizilimi ve telleme odaklı mod"
+          title="Beste yapımı, şarkı zaman çizelgesi, gamlar ve müzik teorisine uygun 7 derece diatonik akorlar"
         >
-          <Guitar className="w-3.5 h-3.5" />
-          <span>Player Modu</span>
+          <Layers className="w-3.5 h-3.5" />
+          <span>🎼 ARANJE MODU</span>
         </button>
 
         <button
-          onClick={() => onViewModeChange('solo')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-            viewMode === 'solo'
-              ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-950/40'
+          onClick={() => onViewModeChange('live')}
+          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+            viewMode === 'live'
+              ? 'bg-emerald-500 text-neutral-950 shadow-md shadow-emerald-950/40'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
           }`}
-          title="Ableton klavye (ASDFGHJKL), gamlar ve solo kayıt odaklı mod"
+          title="Ableton canlı sahne fırlatıcı, canlı akor padleri, klavye ve usta solo doğaçlama"
         >
           <Piano className="w-3.5 h-3.5" />
-          <span>Solo Modu (ASDF)</span>
-        </button>
-
-        <button
-          onClick={() => onViewModeChange('full')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all hidden md:flex ${
-            viewMode === 'full'
-              ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-950/40'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-          }`}
-          title="Tüm panelleri aynı anda göster"
-        >
-          <LayoutGrid className="w-3.5 h-3.5" />
-          <span>Tam Stüdyo</span>
+          <span>🎛️ LIVE MODU</span>
         </button>
       </div>
 

@@ -1,20 +1,21 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { MUSICAL_SCALES, ROOT_NOTES, getScaleNotes } from '../config/scales';
+import { snapMidiToChord, getChordPitchClasses } from '../config/chords';
 import { audioEngine } from '../audio/AudioEngine';
 import { songSequencer } from '../audio/Sequencer';
 import { AcousticInstrumentType, INSTRUMENT_METAS } from '../audio/SampledGuitarEngine';
-import { GuitarChord } from '../types';
-import { Circle, Trash2, Wand2, Sparkles } from 'lucide-react';
+import { GuitarChord, SoloHarmonyMode } from '../types';
+import { Circle, Trash2, Magnet } from 'lucide-react';
 
 interface SoloKeyboardProps {
   currentRoot: string;
   onRootChange: (root: string) => void;
   currentScaleId: string;
   onScaleChange: (scaleId: string) => void;
-  onApplyRecommendedChords: (chords: string[]) => void;
+  onApplyRecommendedChords?: (chords: string[]) => void;
   isPlaying: boolean;
-  percussionOn: boolean;
-  onTogglePercussion: () => void;
+  percussionOn?: boolean;
+  onTogglePercussion?: () => void;
   activeChord: GuitarChord;
 }
 
@@ -31,10 +32,7 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
   onRootChange,
   currentScaleId,
   onScaleChange,
-  onApplyRecommendedChords,
   isPlaying,
-  percussionOn,
-  onTogglePercussion,
   activeChord
 }) => {
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -42,14 +40,14 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
   const [soloCount, setSoloCount] = useState(0);
   const [isSoloMuted, setIsSoloMuted] = useState(false);
 
-  // Selected Solo Instrument
+  // Selected Solo Instrument (Violin default for expressive acoustics)
   const [soloInstrument, setSoloInstrument] = useState<AcousticInstrumentType>('violin');
 
   // Octave Shift (-2 to +2)
   const [octaveShift, setOctaveShift] = useState<number>(0);
 
-  // Active Scale
-  const activeScale = MUSICAL_SCALES[currentScaleId] || MUSICAL_SCALES['minor'];
+  // Virtuoso Solo Harmony Mode (Default: chord-tones so even random keys fit 100%!)
+  const [soloHarmonyMode, setSoloHarmonyMode] = useState<SoloHarmonyMode>('chord-tones');
 
   // Base octaves for FL Studio rows
   const homeOctave = 3 + octaveShift;
@@ -57,34 +55,43 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
   const homeNotes = getScaleNotes(currentRoot, currentScaleId, homeOctave);
   const lowerNotes = getScaleNotes(currentRoot, currentScaleId, homeOctave - 1);
 
-  // Active Chord Tones calculation (for "Solo araç akorlara sadıktır" harmonic highlighting)
-  const chordRoot = activeChord.root; // e.g. "A", "C", "D"
+  // Active Chord Pitch Classes (0-11)
+  const chordPitchClasses = getChordPitchClasses(activeChord);
 
-  // Play a solo note
+  // Play a solo note with Virtuoso Solocu Algoritması
   const triggerSoloNote = useCallback(
-    (midi: number, keyName?: string) => {
+    (rawMidi: number, keyName?: string) => {
       audioEngine.unlock();
-      audioEngine.playSoloMidiNote(midi, undefined, 0.95);
+
+      // Grace note / Çarpma süslemesi for 'smart-lick' mode
+      const withGraceNote = soloHarmonyMode === 'smart-lick' && Math.random() > 0.40;
+      const finalMidi = snapMidiToChord(rawMidi, activeChord, soloHarmonyMode);
+
+      audioEngine.playSoloMidiNote(finalMidi, undefined, 0.95, withGraceNote);
 
       if (keyName) {
         setActiveKey(keyName);
-        setTimeout(() => setActiveKey(null), 150);
+        setTimeout(() => setActiveKey(null), 140);
       }
 
       if (isRecordingSolo && isPlaying) {
-        songSequencer.addSoloNote(midi, 0.95);
+        songSequencer.addSoloNote(finalMidi, 0.95);
         setSoloCount(songSequencer.getSoloCount());
       }
     },
-    [isRecordingSolo, isPlaying]
+    [soloHarmonyMode, activeChord, isRecordingSolo, isPlaying]
   );
+
+  const releaseSoloNote = useCallback((midi?: number) => {
+    audioEngine.stopSoloNote(midi);
+  }, []);
 
   const handleSelectInstrument = (type: AcousticInstrumentType) => {
     setSoloInstrument(type);
     audioEngine.setSoloInstrument(type);
   };
 
-  // FL Studio 3-Row Keyboard Listener
+  // FL Studio 3-Row Keyboard Listener (KeyDown & KeyUp for authentic note release)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
@@ -117,7 +124,7 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
         return;
       }
 
-      // Global Solo recording toggle: 'Space' or 'Alt+R'
+      // Global Solo recording toggle: 'Alt+R'
       if (key === 'r' && e.altKey) {
         e.preventDefault();
         setIsRecordingSolo((prev) => {
@@ -128,9 +135,20 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+        return;
+      }
+      releaseSoloNote();
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [upperNotes, homeNotes, lowerNotes, triggerSoloNote]);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [upperNotes, homeNotes, lowerNotes, triggerSoloNote, releaseSoloNote]);
 
   const toggleRecording = () => {
     const next = !isRecordingSolo;
@@ -150,13 +168,13 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
   };
 
   return (
-    <div className="bg-[#101116] border-2 border-[#242734] rounded-xl p-3 sm:p-4 shadow-2xl space-y-2.5 font-mono select-none">
+    <div className="bg-[#101116] border-2 border-[#242734] rounded-xl p-2 sm:p-2.5 shadow-2xl space-y-1.5 font-mono select-none">
       {/* GROOVEBOX HARDWARE TOOLBAR */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 bg-[#08080c] border border-[#20222c] rounded-lg p-2 text-xs">
-        {/* Left: Solo Instrument Selector (Keman, Klarnet, Saksafon, Mızıka, Naylon, Çelik, Bas) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-[#08080c] border border-[#20222c] rounded-lg p-2 text-xs">
+        {/* Left: Solo Instrument Selector */}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">
-            SOLO ENSTRÜMAN:
+            USTA ENSTRÜMAN:
           </span>
           <div className="flex flex-wrap gap-1 bg-[#14151c] border border-[#262836] rounded-lg p-0.5">
             {(Object.keys(INSTRUMENT_METAS) as AcousticInstrumentType[]).map((instId) => {
@@ -167,11 +185,12 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
                 <button
                   key={instId}
                   onClick={() => handleSelectInstrument(instId)}
-                  className={`px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 transition-all ${
+                  className={`px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1 transition-all ${
                     isSelected
                       ? 'bg-amber-500 text-neutral-950 shadow-sm shadow-amber-500/40'
                       : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
                   }`}
+                  title={`${meta.name} - Gerçek stüdyo kaydı ve doğal enstrüman sönümü`}
                 >
                   <span>{meta.icon}</span>
                   <span>{meta.name}</span>
@@ -181,8 +200,26 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
           </div>
         </div>
 
-        {/* Center: Scale & Root + Harmonic Assistant */}
+        {/* Center: Virtuoso Solo Mode Selector */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* 🧲 SOLO ALGORİTMASI SEÇİCİ */}
+          <div className="flex items-center gap-1 bg-[#14151c] border border-[#262836] rounded-lg p-0.5">
+            <span className="text-[10px] text-amber-400 font-bold px-1.5 flex items-center gap-1">
+              <Magnet className="w-3 h-3 text-amber-400" />
+              SOLOCU ALGORİTMASI:
+            </span>
+            <select
+              value={soloHarmonyMode}
+              onChange={(e) => setSoloHarmonyMode(e.target.value as SoloHarmonyMode)}
+              className="bg-[#1e202c] text-white font-bold text-xs rounded px-2 py-0.5 border border-[#303448] focus:outline-none cursor-pointer"
+            >
+              <option value="chord-tones">🎯 Akor Sesleri (Sıfır Hata / %100 Uyum)</option>
+              <option value="smart-lick">🪄 Virtüöz Doğaçlama (Süsleme & Çarpma)</option>
+              <option value="pentatonic">🎵 Akustik Pentatonik & Blues</option>
+              <option value="free-scale">🎼 Diatonik Gam (Tüm Notalar)</option>
+            </select>
+          </div>
+
           {/* Root */}
           <div className="flex items-center gap-1 bg-[#14151c] border border-[#262836] rounded px-2 py-0.5">
             <span className="text-[10px] text-neutral-400">KÖK:</span>
@@ -214,15 +251,6 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
               ))}
             </select>
           </div>
-
-          <button
-            onClick={() => onApplyRecommendedChords(activeScale.recommendedChords.slice(0, 4))}
-            className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-[11px] font-bold flex items-center gap-1 transition-all"
-            title="Gama uygun akorları aktif kısma aktar"
-          >
-            <Wand2 className="w-3 h-3" />
-            <span>Gama Uygun Akorlar</span>
-          </button>
         </div>
 
         {/* Right: Octave Transpose & Solo Looper */}
@@ -276,129 +304,125 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
               </button>
             </div>
           )}
-
-          {/* Quick Rhythm Toggle */}
-          <button
-            onClick={onTogglePercussion}
-            className={`px-2.5 py-1 rounded text-xs font-bold border transition-all ${
-              percussionOn
-                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                : 'bg-[#14151c] text-neutral-500 border-[#262836]'
-            }`}
-          >
-            {percussionOn ? '🥁 Ritim: Açık' : '🥁 Ritim: Kapalı'}
-          </button>
         </div>
       </div>
 
-      {/* HARMONIC PROMISE: "SOLO ARAÇ AKORLARA SADIKTIR" */}
-      <div className="flex items-center justify-between text-[11px] text-neutral-400 px-1">
-        <span className="flex items-center gap-1.5 text-neutral-300">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>
-            Aktif Akor: <strong className="text-amber-400 font-bold text-sm">{activeChord.displayName}</strong>
-            {' '}(Altın sarısı parlayan tuşlar akorun kök ve renk sesleridir, detone olmak imkansızdır!)
-          </span>
-        </span>
-        <span className="text-[10px] text-neutral-500 hidden sm:inline">
-          FL Studio Klavye Düzeni: [Q-Ü: Tiz] • [A-İ: Ana] • [Z-Ç: Bas]
-        </span>
-      </div>
-
-      {/* FL STUDIO 3-ROW HARDWARE KEYBOARD PADS (Zero Scroll, High Density) */}
-      <div className="space-y-1.5">
-        {/* ROW 1: TİZ OKTAV (Upper Row: Q W E R T Y U I O P Ğ Ü) */}
-        <div className="flex items-center gap-1">
-          <div className="w-12 text-[9px] font-bold text-cyan-400/80 uppercase tracking-tighter shrink-0 text-center">
-            TİZ +1
+      {/* FL STUDIO 3-ROW PHYSICAL KEYBOARD MATRIX (Zero Scroll Compact) */}
+      <div className="space-y-1 bg-[#0b0c10] border border-[#1e202a] rounded-lg p-1.5 shadow-inner">
+        {/* ROW 1: UPPER ROW (Tiz Oktav - Q, W, E, R, T...) */}
+        <div className="flex items-center gap-1 justify-between">
+          <div className="w-14 shrink-0 text-[10px] text-cyan-400 font-bold uppercase tracking-wider pl-1">
+            TİZ [Q-Ü]
           </div>
-          <div className="grid grid-cols-12 gap-1 flex-1">
-            {upperNotes.slice(0, 12).map((note, idx) => {
-              const keyChar = (ROW_UPPER_KEYS[idx] || '').toUpperCase();
+          <div className="grid grid-cols-12 sm:grid-cols-14 gap-1 flex-1">
+            {upperNotes.slice(0, 14).map((note, idx) => {
               const isPressed = activeKey === ROW_UPPER_KEYS[idx];
-              const isChordTone = note.noteName.startsWith(chordRoot);
+              const isChordTone = chordPitchClasses.includes(note.midi % 12);
 
               return (
                 <button
                   key={`upper-${note.noteName}-${idx}`}
-                  onClick={() => triggerSoloNote(note.midi, ROW_UPPER_KEYS[idx])}
-                  className={`relative flex flex-col items-center justify-between p-1 rounded-lg border transition-all active:scale-95 h-14 ${
+                  onMouseDown={() => triggerSoloNote(note.midi, ROW_UPPER_KEYS[idx])}
+                  onMouseUp={() => releaseSoloNote(note.midi)}
+                  onTouchStart={() => triggerSoloNote(note.midi, ROW_UPPER_KEYS[idx])}
+                  onTouchEnd={() => releaseSoloNote(note.midi)}
+                  className={`relative flex flex-col items-center justify-between p-0.5 rounded-lg border transition-all active:scale-95 h-10 ${
                     isPressed
                       ? 'bg-gradient-to-t from-cyan-400 to-white text-neutral-950 scale-105 shadow-[0_0_15px_rgba(34,211,238,0.9)] z-10'
                       : isChordTone
-                      ? 'bg-gradient-to-b from-[#1b2a30] to-[#0e181c] border-cyan-500/80 text-cyan-300 shadow-sm'
-                      : 'bg-[#14161d] border-[#222634] text-neutral-300 hover:border-neutral-500'
+                      ? 'bg-gradient-to-b from-[#142838] to-[#0a141c] border-cyan-500/80 text-cyan-300 shadow-sm'
+                      : 'bg-[#12131a] border-[#202330] text-neutral-400 hover:border-neutral-500'
                   }`}
                 >
-                  <span className="text-[9px] font-mono font-bold text-neutral-400">{keyChar}</span>
-                  <span className="font-bold text-xs font-mono">{note.noteName}</span>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isChordTone ? 'bg-cyan-400 shadow-[0_0_4px_rgba(34,211,238,0.8)]' : 'bg-neutral-600'}`} />
+                  <span className="text-[9px] uppercase font-bold text-neutral-500">{ROW_UPPER_KEYS[idx]}</span>
+                  <span className="text-xs font-bold font-mono tracking-tight">{note.noteName}</span>
+                  <div className="w-full flex justify-center">
+                    {isChordTone ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+                    ) : (
+                      <span className="w-1 h-1 rounded-full bg-neutral-700" />
+                    )}
+                  </div>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* ROW 2: ANA ORTA OKTAV (Home Row: A S D F G H J K L Ş İ) */}
-        <div className="flex items-center gap-1">
-          <div className="w-12 text-[9px] font-bold text-amber-400 uppercase tracking-tighter shrink-0 text-center">
-            ANA 0
+        {/* ROW 2: HOME ROW (Ana Oktav - A, S, D, F, G...) */}
+        <div className="flex items-center gap-1 justify-between">
+          <div className="w-14 shrink-0 text-[10px] text-amber-400 font-bold uppercase tracking-wider pl-1">
+            ORTA [A-İ]
           </div>
-          <div className="grid grid-cols-12 gap-1 flex-1">
-            {homeNotes.slice(0, 12).map((note, idx) => {
-              const keyChar = (ROW_HOME_KEYS[idx] || '').toUpperCase();
+          <div className="grid grid-cols-12 sm:grid-cols-13 gap-1 flex-1">
+            {homeNotes.slice(0, 13).map((note, idx) => {
               const isPressed = activeKey === ROW_HOME_KEYS[idx];
-              const isChordTone = note.noteName.startsWith(chordRoot);
+              const isChordTone = chordPitchClasses.includes(note.midi % 12);
 
               return (
                 <button
                   key={`home-${note.noteName}-${idx}`}
-                  onClick={() => triggerSoloNote(note.midi, ROW_HOME_KEYS[idx])}
-                  className={`relative flex flex-col items-center justify-between p-1 rounded-lg border-2 transition-all active:scale-95 h-16 ${
+                  onMouseDown={() => triggerSoloNote(note.midi, ROW_HOME_KEYS[idx])}
+                  onMouseUp={() => releaseSoloNote(note.midi)}
+                  onTouchStart={() => triggerSoloNote(note.midi, ROW_HOME_KEYS[idx])}
+                  onTouchEnd={() => releaseSoloNote(note.midi)}
+                  className={`relative flex flex-col items-center justify-between p-0.5 rounded-lg border transition-all active:scale-95 h-10 ${
                     isPressed
-                      ? 'bg-gradient-to-t from-amber-400 to-white text-neutral-950 scale-105 shadow-[0_0_20px_rgba(251,191,36,0.9)] z-10'
+                      ? 'bg-gradient-to-t from-amber-400 to-white text-neutral-950 scale-105 shadow-[0_0_15px_rgba(245,158,11,0.9)] z-10'
                       : isChordTone
-                      ? 'bg-gradient-to-b from-[#2e1f10] to-[#170e06] border-amber-500 text-amber-200 shadow-md shadow-amber-950/40 ring-1 ring-amber-500/30'
-                      : 'bg-[#171822] border-[#282d3d] text-neutral-200 hover:border-neutral-500'
+                      ? 'bg-gradient-to-b from-[#2e1d0f] to-[#140c06] border-amber-500 text-amber-300 shadow-sm'
+                      : 'bg-[#12131a] border-[#202330] text-neutral-400 hover:border-neutral-500'
                   }`}
                 >
-                  <span className="text-[10px] font-mono font-black text-amber-400">{keyChar}</span>
-                  <span className="font-bold text-sm font-mono">{note.noteName}</span>
-                  <span className={`text-[9px] font-mono ${isChordTone ? 'text-amber-300 font-bold' : 'text-neutral-500'}`}>
-                    {isChordTone ? '★ KÖK' : `${(idx % 7) + 1}. DER`}
-                  </span>
+                  <span className="text-[9px] uppercase font-bold text-neutral-500">{ROW_HOME_KEYS[idx]}</span>
+                  <span className="text-xs font-bold font-mono tracking-tight">{note.noteName}</span>
+                  <div className="w-full flex justify-center">
+                    {isChordTone ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.8)]" />
+                    ) : (
+                      <span className="w-1 h-1 rounded-full bg-neutral-700" />
+                    )}
+                  </div>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* ROW 3: BAS OKTAV (Lower Row: Z X C V B N M Ö Ç) */}
-        <div className="flex items-center gap-1">
-          <div className="w-12 text-[9px] font-bold text-purple-400/80 uppercase tracking-tighter shrink-0 text-center">
-            BAS -1
+        {/* ROW 3: LOWER ROW (Bas Oktav - Z, X, C, V, B...) */}
+        <div className="flex items-center gap-1 justify-between">
+          <div className="w-14 shrink-0 text-[10px] text-purple-400 font-bold uppercase tracking-wider pl-1">
+            BAS [Z-Ç]
           </div>
-          <div className="grid grid-cols-12 gap-1 flex-1">
-            {lowerNotes.slice(0, 12).map((note, idx) => {
-              const keyChar = (ROW_LOWER_KEYS[idx] || '').toUpperCase();
+          <div className="grid grid-cols-10 sm:grid-cols-11 gap-1 flex-1">
+            {lowerNotes.slice(0, 11).map((note, idx) => {
               const isPressed = activeKey === ROW_LOWER_KEYS[idx];
-              const isChordTone = note.noteName.startsWith(chordRoot);
+              const isChordTone = chordPitchClasses.includes(note.midi % 12);
 
               return (
                 <button
                   key={`lower-${note.noteName}-${idx}`}
-                  onClick={() => triggerSoloNote(note.midi, ROW_LOWER_KEYS[idx])}
-                  className={`relative flex flex-col items-center justify-between p-1 rounded-lg border transition-all active:scale-95 h-13 ${
+                  onMouseDown={() => triggerSoloNote(note.midi, ROW_LOWER_KEYS[idx])}
+                  onMouseUp={() => releaseSoloNote(note.midi)}
+                  onTouchStart={() => triggerSoloNote(note.midi, ROW_LOWER_KEYS[idx])}
+                  onTouchEnd={() => releaseSoloNote(note.midi)}
+                  className={`relative flex flex-col items-center justify-between p-0.5 rounded-lg border transition-all active:scale-95 h-10 ${
                     isPressed
                       ? 'bg-gradient-to-t from-purple-400 to-white text-neutral-950 scale-105 shadow-[0_0_15px_rgba(192,132,252,0.9)] z-10'
                       : isChordTone
-                      ? 'bg-gradient-to-b from-[#25152a] to-[#120a14] border-purple-500/80 text-purple-300 shadow-sm'
+                      ? 'bg-gradient-to-b from-[#231427] to-[#100912] border-purple-500 text-purple-300 shadow-sm'
                       : 'bg-[#12131a] border-[#202330] text-neutral-400 hover:border-neutral-500'
                   }`}
                 >
-                  <span className="text-[9px] font-mono font-bold text-neutral-500">{keyChar}</span>
-                  <span className="font-bold text-xs font-mono">{note.noteName}</span>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isChordTone ? 'bg-purple-400 shadow-[0_0_4px_rgba(192,132,252,0.8)]' : 'bg-neutral-700'}`} />
+                  <span className="text-[9px] uppercase font-bold text-neutral-500">{ROW_LOWER_KEYS[idx]}</span>
+                  <span className="text-xs font-bold font-mono tracking-tight">{note.noteName}</span>
+                  <div className="w-full flex justify-center">
+                    {isChordTone ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_6px_rgba(192,132,252,0.8)]" />
+                    ) : (
+                      <span className="w-1 h-1 rounded-full bg-neutral-700" />
+                    )}
+                  </div>
                 </button>
               );
             })}

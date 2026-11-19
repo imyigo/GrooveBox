@@ -24,6 +24,11 @@ export class AudioEngine {
   private chorusDelay!: DelayNode;
   private chorusGain!: GainNode;
 
+  // Track Submix Busses
+  public soloSubGain!: GainNode;
+  public chordSubGain!: GainNode;
+  public drumSubGain!: GainNode;
+
   // 6 String Stereo Panners & Voices
   private stringPanners: StereoPannerNode[] = [];
   private stringVoices: AcousticStringVoice[] = [];
@@ -39,7 +44,7 @@ export class AudioEngine {
     bodySize: 'dreadnought',
     brightness: 0.75,
     bodyResonance: 0.85,
-    reverbWet: 0.25,
+    reverbWet: 0.04, // Very dry, crisp acoustic studio room
     chorusWet: 0.0,
     strumSpeedMs: 22
   };
@@ -97,15 +102,28 @@ export class AudioEngine {
     this.bodyEqHigh.connect(this.dryGain);
     this.dryGain.connect(this.limiter);
 
-    // Reverb Bus
+    // Reverb Bus (Tight studio acoustic room, low wet)
     this.reverbConvolver = ctx.createConvolver();
-    this.reverbConvolver.buffer = createAcousticBodyImpulse(ctx, 1.4, 2.8, this.preset.bodySize);
+    this.reverbConvolver.buffer = createAcousticBodyImpulse(ctx, 0.32, 9.5, this.preset.bodySize);
     this.reverbGain = ctx.createGain();
     this.reverbGain.gain.setValueAtTime(this.preset.reverbWet, ctx.currentTime);
 
     this.bodyEqHigh.connect(this.reverbConvolver);
     this.reverbConvolver.connect(this.reverbGain);
     this.reverbGain.connect(this.limiter);
+
+    // Submix Busses for independent mix control
+    this.soloSubGain = ctx.createGain();
+    this.soloSubGain.gain.setValueAtTime(0.95, ctx.currentTime);
+    this.soloSubGain.connect(this.bodyEqHigh);
+
+    this.chordSubGain = ctx.createGain();
+    this.chordSubGain.gain.setValueAtTime(0.85, ctx.currentTime);
+    this.chordSubGain.connect(this.bodyEqLow);
+
+    this.drumSubGain = ctx.createGain();
+    this.drumSubGain.gain.setValueAtTime(0.85, ctx.currentTime);
+    this.drumSubGain.connect(this.bodyEqMid);
 
     // Chorus / 12-String Shimmer Bus
     this.chorusDelay = ctx.createDelay();
@@ -145,8 +163,8 @@ export class AudioEngine {
       this.stringVoices.push(new AcousticStringVoice(ctx, targetNode));
     }
 
-    // Initialize Acoustic Percussion
-    this.percussion = new AcousticPercussion(ctx, this.bodyEqMid);
+    // Initialize Acoustic Percussion to drum submix
+    this.percussion = new AcousticPercussion(ctx, this.drumSubGain);
 
     // Initialize Real Sample Engine
     sampledGuitarEngine.init(ctx);
@@ -167,14 +185,50 @@ export class AudioEngine {
   }
 
   /**
-   * Plays a solo note by MIDI number with the chosen solo instrument
+   * Plays a solo note by MIDI number using the Virtuoso Solo Engine
    */
-  public playSoloMidiNote(midi: number, time?: number, velocity: number = 0.9): void {
+  public playSoloMidiNote(
+    midi: number,
+    time?: number,
+    velocity: number = 0.9,
+    withGraceNote: boolean = false
+  ): void {
     if (!this.ctx) this.init();
     const playTime = time ?? this.ctx!.currentTime;
-    const targetNode = this.bodyEqHigh;
-    const soloInst = sampledGuitarEngine.getSoloInstrument();
-    sampledGuitarEngine.playNote(midi, playTime, velocity, targetNode, false, soloInst);
+    const dest = this.soloSubGain || this.bodyEqHigh;
+    sampledGuitarEngine.playSoloNote(
+      midi,
+      playTime,
+      velocity,
+      dest,
+      undefined,
+      withGraceNote
+    );
+  }
+
+  /**
+   * Stops an active solo note on key-up with natural acoustic release
+   */
+  public stopSoloNote(midi?: number, time?: number): void {
+    sampledGuitarEngine.stopSoloNote(midi, time);
+  }
+
+  public setDrumVolume(vol: number): void {
+    if (this.drumSubGain && this.ctx) {
+      this.drumSubGain.gain.setTargetAtTime(Math.max(0, Math.min(1.2, vol)), this.ctx.currentTime, 0.02);
+    }
+  }
+
+  public setChordVolume(vol: number): void {
+    if (this.chordSubGain && this.ctx) {
+      this.chordSubGain.gain.setTargetAtTime(Math.max(0, Math.min(1.2, vol)), this.ctx.currentTime, 0.02);
+    }
+  }
+
+  public setSoloVolume(vol: number): void {
+    if (this.soloSubGain && this.ctx) {
+      this.soloSubGain.gain.setTargetAtTime(Math.max(0, Math.min(1.2, vol)), this.ctx.currentTime, 0.02);
+    }
   }
 
   public async unlock(): Promise<boolean> {
@@ -205,11 +259,11 @@ export class AudioEngine {
     this.preset = preset;
     if (!this.ctx) return;
 
-    // Update body resonance impulse
+    // Update body resonance impulse (tight studio response)
     this.reverbConvolver.buffer = createAcousticBodyImpulse(
       this.ctx,
-      preset.bodySize === 'jumbo' ? 1.8 : 1.2,
-      2.5,
+      preset.bodySize === 'jumbo' ? 0.38 : 0.30,
+      9.0,
       preset.bodySize
     );
 

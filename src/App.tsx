@@ -1,20 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header, AppViewMode } from './components/Header';
-import { Fretboard } from './components/Fretboard';
-import { ChordProgression } from './components/ChordProgression';
+import { ArrangerView } from './components/ArrangerView';
+import { LiveView } from './components/LiveView';
+import { MasterDspRack } from './components/MasterDspRack';
 import { SequencerBar } from './components/SequencerBar';
-import { SoloKeyboard } from './components/SoloKeyboard';
 import { GUITAR_CHORDS } from './config/chords';
 import { GUITAR_PRESETS } from './config/presets';
-import { SongProgression } from './config/progressions';
 import { songSequencer, SequencerState, DEFAULT_SONG_SECTIONS } from './audio/Sequencer';
 import { audioEngine } from './audio/AudioEngine';
 import { BodyPreset, GuitarChord, SongSection } from './types';
 import { AcousticInstrumentType } from './audio/SampledGuitarEngine';
 
 export const App: React.FC = () => {
-  // Tam Stüdyo (Full Studio) is the DEFAULT experience!
-  const [viewMode, setViewMode] = useState<AppViewMode>('full');
+  // Live Modu is the active default performance experience!
+  const [viewMode, setViewMode] = useState<AppViewMode>('live');
 
   // Sequencer & Playback State
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -36,17 +35,16 @@ export const App: React.FC = () => {
   // Song Sections & Scenes
   const [sections, setSections] = useState<SongSection[]>(DEFAULT_SONG_SECTIONS);
   const [currentSectionIndex, setCurrentSectionIndex] = useState<number>(0);
+  const [queuedSectionIndex, setQueuedSectionIndex] = useState<number | null>(null);
   const [autoAdvanceSections, setAutoAdvanceSections] = useState<boolean>(true);
   const [currentRepeat, setCurrentRepeat] = useState<number>(0);
 
   // Active Chord & Preset
-  const currentSection = sections[currentSectionIndex] || sections[0];
   const [currentChordIndex, setCurrentChordIndex] = useState<number>(0);
   const [activeChord, setActiveChord] = useState<GuitarChord>(GUITAR_CHORDS['Am']);
   const [currentPreset, setCurrentPreset] = useState<BodyPreset>(GUITAR_PRESETS[0]);
 
-  // Step playhead & visual plucks
-  const [, setCurrentStep] = useState<number>(0);
+  // Visual string plucks
   const [activeStringPluck, setActiveStringPluck] = useState<{
     stringIndex: number;
     fret: number;
@@ -64,8 +62,8 @@ export const App: React.FC = () => {
     const unsubscribeStep = songSequencer.onStep((state: SequencerState) => {
       setIsPlaying(state.isPlaying);
       setCurrentSectionIndex(state.currentSectionIndex);
+      setQueuedSectionIndex(state.queuedSectionIndex);
       setCurrentChordIndex(state.currentChordIndex);
-      setCurrentStep(state.currentStep);
       setCurrentRepeat(state.currentRepeat);
 
       const sec = songSequencer.getCurrentSection();
@@ -146,30 +144,11 @@ export const App: React.FC = () => {
     audioEngine.applyPreset(preset);
   };
 
-  const handleLoadProgression = (prog: SongProgression) => {
-    audioEngine.unlock();
-    const next = [...sections];
-    next[currentSectionIndex] = {
-      ...currentSection,
-      chords: prog.chords,
-      patternId: prog.patternId
-    };
-    handleUpdateSections(next);
-    handleBpmChange(prog.bpm);
-
-    if (prog.scaleRoot) setCurrentRoot(prog.scaleRoot);
-    if (prog.scaleId) setCurrentScaleId(prog.scaleId);
-
-    if (prog.chords.length > 0 && GUITAR_CHORDS[prog.chords[0]]) {
-      setActiveChord(GUITAR_CHORDS[prog.chords[0]]);
-    }
-  };
-
   const handleApplyRecommendedChords = (newChords: string[]) => {
     audioEngine.unlock();
     const next = [...sections];
     next[currentSectionIndex] = {
-      ...currentSection,
+      ...sections[currentSectionIndex],
       chords: newChords
     };
     handleUpdateSections(next);
@@ -183,8 +162,8 @@ export const App: React.FC = () => {
     songSequencer.stop();
     setIsPlaying(false);
     setCurrentSectionIndex(0);
+    setQueuedSectionIndex(null);
     setCurrentChordIndex(0);
-    setCurrentStep(0);
     setCurrentRepeat(0);
   };
 
@@ -229,13 +208,11 @@ export const App: React.FC = () => {
         onTogglePercussion={handleTogglePercussion}
       />
 
-      {/* 2. MAIN HARDWARE WORKSPACE (Zero Scroll Grid, 100% Viewport Bound) */}
-      <main className="flex-1 overflow-hidden p-2 sm:p-3 flex flex-col justify-between gap-2.5">
-        {/* UPPER ROW: Sections & Chords (Left) + Fretboard & Strumming (Right) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 flex-1 min-h-0 overflow-hidden">
-          {/* LEFT: Song Sections & Chords Matrix (Cols 1-7) */}
-          <div className="lg:col-span-7 flex flex-col min-h-0 overflow-y-auto scrollbar-thin">
-            <ChordProgression
+      {/* 2. MAIN WORKSPACE (Arranger View OR Live View) */}
+      <main className="flex-1 overflow-hidden p-2 sm:p-2.5 flex flex-col justify-between gap-2 min-h-0">
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {viewMode === 'arranger' ? (
+            <ArrangerView
               sections={sections}
               currentSectionIndex={currentSectionIndex}
               onSelectSection={handleSelectSection}
@@ -244,18 +221,22 @@ export const App: React.FC = () => {
               onToggleAutoAdvance={handleToggleAutoAdvance}
               currentChordIndex={currentChordIndex}
               activeChord={activeChord}
-              onSelectChord={(chord) => setActiveChord(chord)}
-              onLoadProgression={handleLoadProgression}
+              onSelectChord={setActiveChord}
               currentRoot={currentRoot}
+              onRootChange={setCurrentRoot}
               currentScaleId={currentScaleId}
+              onScaleChange={setCurrentScaleId}
               currentRepeat={currentRepeat}
             />
-          </div>
-
-          {/* RIGHT: Fretboard & Real String Vibration (Cols 8-12) */}
-          <div className="lg:col-span-5 flex flex-col justify-between min-h-0 overflow-y-auto scrollbar-thin">
-            <Fretboard
-              chord={activeChord}
+          ) : (
+            <LiveView
+              sections={sections}
+              currentSectionIndex={currentSectionIndex}
+              queuedSectionIndex={queuedSectionIndex}
+              currentChordIndex={currentChordIndex}
+              currentRepeat={currentRepeat}
+              activeChord={activeChord}
+              onSelectChord={setActiveChord}
               activeStringPluck={activeStringPluck}
               onPluckNote={(stringIndex, fret) => {
                 setActiveStringPluck({
@@ -264,26 +245,29 @@ export const App: React.FC = () => {
                   id: Date.now() + Math.random()
                 });
               }}
+              currentRoot={currentRoot}
+              onRootChange={setCurrentRoot}
+              currentScaleId={currentScaleId}
+              onScaleChange={setCurrentScaleId}
+              onApplyRecommendedChords={handleApplyRecommendedChords}
+              isPlaying={isPlaying}
+              percussionOn={percussionOn}
+              onTogglePercussion={handleTogglePercussion}
             />
-          </div>
+          )}
         </div>
 
-        {/* LOWER ROW: FL Studio 3-Row Computer Keyboard Solo Engine (Full Width, Zero Scroll) */}
+        {/* 3. HARDWARE MASTER DSP & MIXER STRIP (Direct Reverb, Tone, Speed, Submixes) */}
         <div className="shrink-0">
-          <SoloKeyboard
-            currentRoot={currentRoot}
-            onRootChange={setCurrentRoot}
-            currentScaleId={currentScaleId}
-            onScaleChange={setCurrentScaleId}
-            onApplyRecommendedChords={handleApplyRecommendedChords}
-            isPlaying={isPlaying}
+          <MasterDspRack
+            swing={swing}
+            onSwingChange={handleSwingChange}
             percussionOn={percussionOn}
             onTogglePercussion={handleTogglePercussion}
-            activeChord={activeChord}
           />
         </div>
 
-        {/* BOTTOM FIXED TRANSPORT & SEQUENCER BAR */}
+        {/* 4. BOTTOM FIXED TRANSPORT BAR */}
         <div className="shrink-0">
           <SequencerBar
             isPlaying={isPlaying}

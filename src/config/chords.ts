@@ -1,4 +1,4 @@
-import { GuitarChord } from '../types';
+import { GuitarChord, SoloHarmonyMode } from '../types';
 
 export const STANDARD_TUNING_FREQS = [
   82.41,  // E2 (6th string - Low E)
@@ -154,6 +154,87 @@ export const GUITAR_CHORDS: Record<string, GuitarChord> = {
     frets: [-1, 0, 2, 0, 2, 0],
     category: 'open'
   },
+  'B7': {
+    id: 'B7',
+    name: 'B7',
+    displayName: 'B Dominant 7',
+    root: 'B',
+    type: '7',
+    frets: [-1, 2, 1, 2, 0, 2],
+    category: 'open'
+  },
+  'D7': {
+    id: 'D7',
+    name: 'D7',
+    displayName: 'D Dominant 7',
+    root: 'D',
+    type: '7',
+    frets: [-1, -1, 0, 2, 1, 2],
+    category: 'open'
+  },
+  'Bb': {
+    id: 'Bb',
+    name: 'Bb',
+    displayName: 'Bb Major (Kürdi Karakter)',
+    root: 'Bb',
+    type: 'major',
+    frets: [-1, 1, 3, 3, 3, 1],
+    category: 'barre'
+  },
+  'Gm': {
+    id: 'Gm',
+    name: 'Gm',
+    displayName: 'G Minor',
+    root: 'G',
+    type: 'minor',
+    frets: [3, 5, 5, 3, 3, 3],
+    category: 'barre'
+  },
+  'Cm': {
+    id: 'Cm',
+    name: 'Cm',
+    displayName: 'C Minor',
+    root: 'C',
+    type: 'minor',
+    frets: [-1, 3, 5, 5, 4, 3],
+    category: 'barre'
+  },
+  'Bdim': {
+    id: 'Bdim',
+    name: 'Bdim',
+    displayName: 'B Diminished (ii° Eksik)',
+    root: 'B',
+    type: 'minor',
+    frets: [-1, 2, 3, 4, 3, -1],
+    category: 'open'
+  },
+  'Am7': {
+    id: 'Am7',
+    name: 'Am7',
+    displayName: 'A Minor 7',
+    root: 'A',
+    type: 'm7',
+    frets: [-1, 0, 2, 0, 1, 0],
+    category: 'open'
+  },
+  'Dm7': {
+    id: 'Dm7',
+    name: 'Dm7',
+    displayName: 'D Minor 7',
+    root: 'D',
+    type: 'm7',
+    frets: [-1, -1, 0, 2, 1, 1],
+    category: 'open'
+  },
+  'Cmaj7': {
+    id: 'Cmaj7',
+    name: 'Cmaj7',
+    displayName: 'C Major 7',
+    root: 'C',
+    type: 'maj7',
+    frets: [-1, 3, 2, 0, 0, 0],
+    category: 'open'
+  },
   'Cadd9': {
     id: 'Cadd9',
     name: 'Cadd9',
@@ -200,4 +281,91 @@ export function getFretFrequency(stringIndex: number, fret: number): number {
   const baseFreq = STANDARD_TUNING_FREQS[stringIndex];
   // Standard equal temperament formula: f = f0 * 2^(fret / 12)
   return baseFreq * Math.pow(2, fret / 12);
+}
+
+const ROOT_SEMITONES: Record<string, number> = {
+  'C': 0, 'C#': 1, 'Db': 1,
+  'D': 2, 'D#': 3, 'Eb': 3,
+  'E': 4,
+  'F': 5, 'F#': 6, 'Gb': 6,
+  'G': 7, 'G#': 8, 'Ab': 8,
+  'A': 9, 'A#': 10, 'Bb': 10,
+  'B': 11
+};
+
+const CHORD_INTERVALS: Record<GuitarChord['type'], number[]> = {
+  'major': [0, 4, 7],
+  'minor': [0, 3, 7],
+  '7': [0, 4, 7, 10],
+  'maj7': [0, 4, 7, 11],
+  'm7': [0, 3, 7, 10],
+  'sus4': [0, 5, 7],
+  'add9': [0, 2, 4, 7]
+};
+
+/**
+ * Returns pitch classes (0-11) for any chord
+ */
+export function getChordPitchClasses(chord: GuitarChord): number[] {
+  const rootSemi = ROOT_SEMITONES[chord.root] ?? 0;
+  const intervals = CHORD_INTERVALS[chord.type] || [0, 4, 7];
+  return intervals.map((int) => (rootSemi + int) % 12);
+}
+
+/**
+ * Smart Harmonic Snapping (Zero-Mistake Solo Engine):
+ * Snaps any played MIDI note to the nearest chord tone or harmonic pitch
+ * based on the active chord and selected harmony mode!
+ */
+export function snapMidiToChord(
+  midi: number,
+  chord: GuitarChord,
+  mode: SoloHarmonyMode = 'chord-tones'
+): number {
+  if (mode === 'free-scale') {
+    return midi;
+  }
+
+  const rootSemi = ROOT_SEMITONES[chord.root] ?? 0;
+
+  let targetPitches: number[];
+  if (mode === 'pentatonic') {
+    // Relative pentatonic tones
+    const intervals = chord.type === 'minor' || chord.type === 'm7'
+      ? [0, 3, 5, 7, 10] // Minor pentatonic
+      : [0, 2, 4, 7, 9]; // Major pentatonic
+    targetPitches = intervals.map((i) => (rootSemi + i) % 12);
+  } else {
+    // 'chord-tones' or 'smart-lick': Chord tones (1, 3, 5) plus color extensions (7, 9)
+    const baseIntervals = CHORD_INTERVALS[chord.type] || [0, 4, 7];
+    // Add sweet 9th (2 semitones up) and 7th
+    const extensions = [...baseIntervals];
+    if (!extensions.includes(2)) extensions.push(2);
+    if (!extensions.includes(10) && (chord.type === 'minor' || chord.type === '7')) extensions.push(10);
+    targetPitches = extensions.map((i) => (rootSemi + i) % 12);
+  }
+
+  const notePitch = midi % 12;
+  if (targetPitches.includes(notePitch)) {
+    return midi;
+  }
+
+  // Find closest target pitch across full semitone distance [-6 to +6]
+  let bestMidi = midi;
+  let minDiff = 999;
+
+  for (let offset = -6; offset <= 6; offset++) {
+    if (offset === 0) continue;
+    const candidateMidi = midi + offset;
+    const candidatePitch = ((candidateMidi % 12) + 12) % 12;
+    if (targetPitches.includes(candidatePitch)) {
+      const diff = Math.abs(offset);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestMidi = candidateMidi;
+      }
+    }
+  }
+
+  return bestMidi;
 }
