@@ -281,6 +281,10 @@ export const App: React.FC = () => {
               onSelectChord={setActiveChord}
               currentRoot={currentRoot}
               currentScaleId={currentScaleId}
+              isPlaying={isPlaying}
+              onTogglePlay={handleTogglePlay}
+              bpm={bpm}
+              currentRepeat={currentRepeat}
             />
           )}
         </div>

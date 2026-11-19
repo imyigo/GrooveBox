@@ -118,11 +118,11 @@ export class AudioEngine {
     this.soloSubGain.connect(this.bodyEqHigh);
 
     this.chordSubGain = ctx.createGain();
-    this.chordSubGain.gain.setValueAtTime(0.85, ctx.currentTime);
+    this.chordSubGain.gain.setValueAtTime(0.95, ctx.currentTime);
     this.chordSubGain.connect(this.bodyEqLow);
 
     this.drumSubGain = ctx.createGain();
-    this.drumSubGain.gain.setValueAtTime(0.85, ctx.currentTime);
+    this.drumSubGain.gain.setValueAtTime(0.90, ctx.currentTime);
     this.drumSubGain.connect(this.bodyEqMid);
 
     // Chorus / 12-String Shimmer Bus
@@ -145,7 +145,7 @@ export class AudioEngine {
     this.chorusDelay.connect(this.chorusGain);
     this.chorusGain.connect(this.limiter);
 
-    // 4. Create 6 String Stereo Panners
+    // 4. Create 6 String Stereo Panners connected to chordSubGain
     const panPositions = [-0.35, -0.2, -0.08, 0.08, 0.2, 0.35];
 
     this.stringPanners = [];
@@ -156,10 +156,10 @@ export class AudioEngine {
       if (ctx.createStereoPanner) {
         panner = ctx.createStereoPanner();
         panner.pan.setValueAtTime(panPositions[i], ctx.currentTime);
-        panner.connect(this.bodyEqLow);
+        panner.connect(this.chordSubGain);
         this.stringPanners.push(panner);
       }
-      const targetNode = panner ? panner : this.bodyEqLow;
+      const targetNode = panner ? panner : this.chordSubGain;
       this.stringVoices.push(new AcousticStringVoice(ctx, targetNode));
     }
 

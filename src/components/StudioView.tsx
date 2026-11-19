@@ -1,9 +1,14 @@
 import React, { useState } from 'react';
 import { GUITAR_CHORDS } from '../config/chords';
 import { getDiatonicChords } from '../config/scales';
+import { STRUM_PATTERNS } from '../config/patterns';
 import { GuitarChord, SongSection, DrumMode } from '../types';
+import { audioEngine } from '../audio/AudioEngine';
+import { songSequencer } from '../audio/Sequencer';
+import { strumEngine } from '../audio/StrumEngine';
 import {
-  Layers,
+  Play,
+  Square,
   Plus,
   Trash2,
   Copy,
@@ -11,10 +16,13 @@ import {
   ChevronDown,
   Repeat,
   Music,
-  Sliders
+  Sliders,
+  Guitar,
+  Drum,
+  Disc3,
+  Layers,
+  Sparkles
 } from 'lucide-react';
-import { strumEngine } from '../audio/StrumEngine';
-import { audioEngine } from '../audio/AudioEngine';
 
 interface StudioViewProps {
   sections: SongSection[];
@@ -27,6 +35,10 @@ interface StudioViewProps {
   onSelectChord: (chord: GuitarChord) => void;
   currentRoot: string;
   currentScaleId: string;
+  isPlaying: boolean;
+  onTogglePlay: () => void;
+  bpm: number;
+  currentRepeat?: number;
 }
 
 export const StudioView: React.FC<StudioViewProps> = ({
@@ -39,26 +51,83 @@ export const StudioView: React.FC<StudioViewProps> = ({
   currentChordIndex,
   onSelectChord,
   currentRoot,
-  currentScaleId
+  currentScaleId,
+  isPlaying,
+  onTogglePlay,
+  bpm,
+  currentRepeat = 0
 }) => {
   const currentSection = sections[currentSectionIndex] || sections[0];
   const diatonicChords = getDiatonicChords(currentRoot, currentScaleId);
 
-  // Quick section templates
+  // Track Mute & Solo States (DAW Track Headers)
+  const [guitarMuted, setGuitarMuted] = useState(false);
+  const [percussionMuted, setPercussionMuted] = useState(false);
+  const [soloMuted, setSoloMuted] = useState(false);
+
+  // Track Volumes
+  const [guitarVol, setGuitarVol] = useState(0.85);
+  const [percussionVol, setPercussionVol] = useState(0.85);
+  const [soloVol, setSoloVol] = useState(0.95);
+
+  // Quick section type template
   const [newSectionType, setNewSectionType] = useState<string>('Söz (Verse)');
 
+  // Track Header Actions
+  const handleToggleGuitarMute = () => {
+    const next = !guitarMuted;
+    setGuitarMuted(next);
+    songSequencer.setGuitarMuted(next);
+  };
+
+  const handleTogglePercussionMute = () => {
+    const next = !percussionMuted;
+    setPercussionMuted(next);
+    songSequencer.setPercussionEnabled(!next);
+  };
+
+  const handleToggleSoloMute = () => {
+    const next = !soloMuted;
+    setSoloMuted(next);
+    songSequencer.setSoloMuted(next);
+  };
+
+  const handleGuitarVolChange = (val: number) => {
+    setGuitarVol(val);
+    audioEngine.setChordVolume(val);
+  };
+
+  const handlePercussionVolChange = (val: number) => {
+    setPercussionVol(val);
+    audioEngine.setDrumVolume(val);
+  };
+
+  const handleSoloVolChange = (val: number) => {
+    setSoloVol(val);
+    audioEngine.setSoloVolume(val);
+  };
+
+  // Timeline / Section Management
   const handleAddSection = () => {
     const defaultChords = diatonicChords.slice(0, 4).map((c) => c.chordId);
+    const colorPalette = [
+      'from-amber-600 to-orange-700',
+      'from-emerald-600 to-teal-700',
+      'from-blue-600 to-cyan-700',
+      'from-purple-600 to-pink-700',
+      'from-rose-600 to-red-700'
+    ];
     const newSection: SongSection = {
       id: `section-${Date.now()}`,
       name: newSectionType,
       chords: defaultChords.length ? defaultChords : ['Am', 'Dm', 'E', 'Am'],
       patternId: 'folk-rock',
       repeats: 2,
-      color: 'from-amber-600 to-orange-700',
+      color: colorPalette[sections.length % colorPalette.length],
       drumMode: 'cajon-shaker'
     };
-    onUpdateSections([...sections, newSection]);
+    const next = [...sections, newSection];
+    onUpdateSections(next);
     onSelectSection(sections.length);
   };
 
@@ -110,6 +179,12 @@ export const StudioView: React.FC<StudioViewProps> = ({
     onUpdateSections(next);
   };
 
+  const handleUpdatePattern = (patternId: string) => {
+    const next = [...sections];
+    next[currentSectionIndex] = { ...currentSection, patternId };
+    onUpdateSections(next);
+  };
+
   const handleUpdateDrumMode = (drumMode: DrumMode) => {
     const next = [...sections];
     next[currentSectionIndex] = { ...currentSection, drumMode };
@@ -141,41 +216,93 @@ export const StudioView: React.FC<StudioViewProps> = ({
     onUpdateSections(next);
   };
 
+  // Calculate cumulative bar counts for timeline ruler
+  let accumulatedBars = 0;
+  const sectionBarSpans = sections.map((sec) => {
+    const totalBars = sec.chords.length * sec.repeats;
+    const startBar = accumulatedBars + 1;
+    accumulatedBars += totalBars;
+    const endBar = accumulatedBars;
+    return { section: sec, totalBars, startBar, endBar };
+  });
+
   return (
-    <div className="flex flex-col gap-2.5 h-full min-h-0 overflow-y-auto scrollbar-thin font-mono text-neutral-200">
-      {/* 1. TOP SONGLINE ARRANGEMENT STRIP */}
-      <div className="bg-[#0b0c10] border-2 border-[#20222e] rounded-xl p-3 shadow-2xl shrink-0">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1c1e28] pb-2 mb-2.5 text-xs">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-amber-400" />
-            <span className="font-bold text-white uppercase tracking-wider text-xs">
-              ŞARKI ZAMAN ÇİZELGESİ (ARRANGEMENT TIMELINE):
-            </span>
-            <span className="text-[10px] text-neutral-400">
-              {sections.length} Kısım | Toplam {sections.reduce((acc, s) => acc + s.chords.length * s.repeats, 0)} Bar
-            </span>
+    <div className="flex flex-col gap-2 h-full min-h-0 overflow-y-auto scrollbar-thin font-mono text-neutral-200">
+      {/* 1. PROFESSIONAL DAW TRANSPORT & TIMELINE HEADER (BandLab / Logic Pro / Ableton style) */}
+      <div className="bg-[#090a0e] border-2 border-[#1c1e28] rounded-xl p-2.5 sm:p-3 shadow-2xl shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Left: DAW Branding & Playhead Status */}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-700 p-0.5 shadow-md flex items-center justify-center">
+              <Layers className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white text-xs tracking-wider uppercase">
+                  STÜDYO ZAMAN ÇİZELGESİ (ARRANGER TIMELINE)
+                </span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-mono font-bold">
+                  DAW MULTI-TRACK
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-neutral-400 mt-0.5">
+                <span className="text-white font-mono font-bold">
+                  BAR {String(currentSectionIndex + 1).padStart(2, '0')} : {String(currentChordIndex + 1).padStart(2, '0')} : {String(currentRepeat + 1).padStart(2, '0')}
+                </span>
+                <span>•</span>
+                <span className="text-amber-400 font-bold">{bpm} BPM</span>
+                <span>•</span>
+                <span className="text-emerald-400 font-bold">4/4</span>
+                <span>•</span>
+                <span className="text-neutral-300">Toplam: {accumulatedBars} Bar</span>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Auto advance song toggle */}
+          {/* Center/Right: Riff Play/Stop & Song Chain Mode */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Primary Riff Playback Button */}
             <button
-              onClick={onToggleAutoAdvance}
-              className={`px-2.5 py-1 rounded text-xs font-bold flex items-center gap-1.5 border transition-all ${
-                autoAdvanceSections
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60'
-                  : 'bg-[#14151c] border-[#262836] text-neutral-400'
+              onClick={onTogglePlay}
+              className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-lg active:scale-95 ${
+                isPlaying
+                  ? 'bg-red-500/20 text-red-400 border border-red-500/50 shadow-red-950/40 animate-pulse'
+                  : 'bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 hover:brightness-110 shadow-amber-500/30'
               }`}
             >
-              <Repeat className="w-3 h-3" />
-              <span>{autoAdvanceSections ? 'ŞARKIYI SIRAYLA ÇAL (AÇIK)' : 'KISIM DÖNGÜSÜ (LOOP)'}</span>
+              {isPlaying ? (
+                <>
+                  <Square className="w-4 h-4 fill-current" />
+                  <span>DURDUR</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>RIFF ÇAL (DÖNGÜ)</span>
+                </>
+              )}
             </button>
 
-            {/* Add Section Controller */}
-            <div className="flex items-center gap-1 bg-[#14151c] border border-[#252838] rounded-lg p-0.5">
+            {/* Song Chain vs Section Loop */}
+            <button
+              onClick={onToggleAutoAdvance}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${
+                autoAdvanceSections
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-sm shadow-emerald-950/40'
+                  : 'bg-[#12131c] border-[#222534] text-neutral-400 hover:text-white'
+              }`}
+              title="Açıkken şarkı kısımları baştan sona sırayla çalar; kapalıyken seçili kısım döngüye girer."
+            >
+              <Repeat className="w-3.5 h-3.5" />
+              <span>{autoAdvanceSections ? 'ŞARKIYI SIRAYLA ÇAL' : 'KISIM DÖNGÜSÜ (LOOP)'}</span>
+            </button>
+
+            {/* Add Section dropdown & button */}
+            <div className="flex items-center gap-1 bg-[#12141c] border border-[#222534] rounded-xl p-0.5">
               <select
                 value={newSectionType}
                 onChange={(e) => setNewSectionType(e.target.value)}
-                className="bg-transparent text-white font-bold text-xs px-2 py-0.5 focus:outline-none cursor-pointer"
+                className="bg-transparent text-white font-bold text-xs px-2 py-1 focus:outline-none cursor-pointer"
               >
                 <option value="Giriş (Intro)" className="bg-neutral-900">Giriş (Intro)</option>
                 <option value="Söz (Verse)" className="bg-neutral-900">Söz (Verse)</option>
@@ -185,7 +312,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
               </select>
               <button
                 onClick={handleAddSection}
-                className="px-2.5 py-1 rounded bg-amber-500 text-neutral-950 font-bold text-xs flex items-center gap-1 hover:brightness-110 active:scale-95"
+                className="px-2.5 py-1 rounded-lg bg-amber-500 text-neutral-950 font-bold text-xs flex items-center gap-1 hover:brightness-110 active:scale-95 shadow-sm"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Kısım Ekle</span>
@@ -193,156 +320,392 @@ export const StudioView: React.FC<StudioViewProps> = ({
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Section Cards List */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-          {sections.map((sec, idx) => {
-            const isSelected = idx === currentSectionIndex;
+      {/* 2. LOGIC PRO / ABLETON LIVE MULTI-TRACK TIMELINE MATRIX */}
+      <div className="bg-[#0b0c10] border-2 border-[#1c1e28] rounded-xl p-2.5 shadow-2xl flex flex-col gap-1.5 shrink-0 select-none">
+        {/* TIMELINE RULER BAR */}
+        <div className="grid grid-cols-[160px_1fr] sm:grid-cols-[200px_1fr] items-center border-b border-[#1c1e28] pb-1.5 text-[10px] text-neutral-400">
+          <div className="font-bold text-neutral-500 uppercase tracking-wider pl-2 flex items-center gap-1.5">
+            <Sliders className="w-3.5 h-3.5 text-neutral-400" />
+            <span>KANALLAR (TRACKS)</span>
+          </div>
 
-            return (
+          {/* Time Ruler: Bar Numbers */}
+          <div className="flex items-center gap-1 overflow-x-hidden">
+            {sectionBarSpans.map((span, sIdx) => (
               <div
-                key={sec.id}
-                onClick={() => onSelectSection(idx)}
-                className={`relative cursor-pointer rounded-xl p-3 border-2 transition-all flex flex-col justify-between h-28 select-none ${
-                  isSelected
-                    ? 'bg-gradient-to-br from-[#1c2234] to-[#0e111a] border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
-                    : 'bg-[#12141c] border-[#222432] hover:border-neutral-500'
-                }`}
+                key={sIdx}
+                style={{ flex: span.totalBars }}
+                className="text-center font-mono border-l border-[#242738] pl-1 truncate"
               >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span className="text-[10px] font-bold text-neutral-400 font-mono">#{idx + 1}</span>
-                    <span className="text-xs font-bold text-white truncate">{sec.name}</span>
-                  </div>
-
-                  {/* Actions: Reorder, Duplicate, Delete */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      disabled={idx === 0}
-                      onClick={(e) => handleMoveSection(idx, 'up', e)}
-                      className="p-0.5 text-neutral-400 hover:text-white disabled:opacity-20"
-                      title="Öne Taşı"
-                    >
-                      <ChevronUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      disabled={idx === sections.length - 1}
-                      onClick={(e) => handleMoveSection(idx, 'down', e)}
-                      className="p-0.5 text-neutral-400 hover:text-white disabled:opacity-20"
-                      title="Arkaya Taşı"
-                    >
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => handleDuplicateSection(idx, e)}
-                      className="p-0.5 text-neutral-400 hover:text-cyan-400"
-                      title="Kopyala"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
-                    {sections.length > 1 && (
-                      <button
-                        onClick={(e) => handleRemoveSection(idx, e)}
-                        className="p-0.5 text-neutral-400 hover:text-red-400"
-                        title="Sil"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Chords Sequence Preview */}
-                <div className="flex items-center gap-1 overflow-x-hidden my-1">
-                  {sec.chords.map((chordId, cIdx) => (
-                    <span
-                      key={cIdx}
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        isSelected && cIdx === currentChordIndex
-                          ? 'bg-amber-500 text-neutral-950 font-black'
-                          : 'bg-[#1d202e] text-neutral-300'
-                      }`}
-                    >
-                      {chordId}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Footer specs */}
-                <div className="flex items-center justify-between text-[10px] text-neutral-400 border-t border-[#202334] pt-1">
-                  <span className="text-amber-400 font-bold">{sec.repeats}x Tekrar</span>
-                  <span className="text-emerald-400 font-semibold">{sec.drumMode}</span>
-                </div>
+                <span className="text-white font-bold">Bar {span.startBar} - {span.endBar}</span>
+                <span className="text-[9px] text-neutral-500 ml-1">({span.section.name})</span>
               </div>
-            );
-          })}
+            ))}
+          </div>
+        </div>
+
+        {/* TRACK 1: AKUSTİK GİTAR (CHORDS & RIFF TRACK) */}
+        <div className="grid grid-cols-[160px_1fr] sm:grid-cols-[200px_1fr] items-center bg-[#0e0f14] border border-[#20222e] rounded-lg p-1.5 gap-2">
+          {/* Track Header (Logic Pro style) */}
+          <div className="flex items-center justify-between bg-[#14151e] border border-[#252838] rounded-lg p-1.5">
+            <div className="flex items-center gap-1.5 truncate">
+              <Guitar className="w-4 h-4 text-amber-400 shrink-0" />
+              <div className="truncate">
+                <span className="text-xs font-bold text-white block truncate leading-none">Akustik Gitar</span>
+                <span className="text-[9px] text-amber-400/80 font-mono">Riff & Akor</span>
+              </div>
+            </div>
+
+            {/* Mute & Solo Buttons */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleToggleGuitarMute}
+                className={`w-5 h-5 rounded text-[10px] font-bold border transition-colors ${
+                  guitarMuted
+                    ? 'bg-red-500 text-white border-red-400'
+                    : 'bg-[#1e202c] border-[#303448] text-neutral-400 hover:text-white'
+                }`}
+                title="Gitarı Sustur (Mute)"
+              >
+                M
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1.2"
+                step="0.05"
+                value={guitarVol}
+                onChange={(e) => handleGuitarVolChange(parseFloat(e.target.value))}
+                className="w-10 accent-amber-500 h-1 bg-neutral-800 rounded cursor-pointer hidden sm:block"
+                title="Gitar Sesi"
+              />
+            </div>
+          </div>
+
+          {/* Track Lane: Section Clips */}
+          <div className="flex items-center gap-1.5 h-14 overflow-x-hidden">
+            {sections.map((sec, idx) => {
+              const isSelected = idx === currentSectionIndex;
+              const isPlayingThis = isPlaying && idx === currentSectionIndex;
+
+              return (
+                <div
+                  key={sec.id}
+                  onClick={() => onSelectSection(idx)}
+                  style={{ flex: sec.chords.length * sec.repeats }}
+                  className={`group relative h-full rounded-lg border-2 cursor-pointer p-1.5 flex flex-col justify-between transition-all select-none overflow-hidden ${
+                    isPlayingThis
+                      ? 'bg-gradient-to-r from-[#2e1d0f] to-[#1a1007] border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.4)]'
+                      : isSelected
+                      ? 'bg-[#181a24] border-neutral-400 shadow-md'
+                      : 'bg-[#11131a] border-[#222534] hover:border-neutral-500 opacity-90'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[11px] font-bold text-white truncate">{sec.name}</span>
+                    <span className="text-[9px] text-amber-400 font-bold">{sec.repeats}x</span>
+                  </div>
+
+                  {/* Chord blocks preview */}
+                  <div className="flex items-center gap-1 overflow-x-hidden">
+                    {sec.chords.map((c, cIdx) => (
+                      <span
+                        key={cIdx}
+                        className={`text-[9px] font-bold px-1 rounded ${
+                          isPlayingThis && cIdx === currentChordIndex
+                            ? 'bg-amber-500 text-neutral-950 font-black'
+                            : 'bg-black/40 text-neutral-300'
+                        }`}
+                      >
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Stylized wave / strum lines */}
+                  <div className="w-full h-1 bg-neutral-800/80 rounded-full overflow-hidden flex items-center">
+                    <div className="w-full h-full bg-gradient-to-r from-amber-500 to-amber-600 opacity-60" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* TRACK 2: AKUSTİK PERKÜSYON (DRUMS & RHYTHM TRACK) */}
+        <div className="grid grid-cols-[160px_1fr] sm:grid-cols-[200px_1fr] items-center bg-[#0e0f14] border border-[#20222e] rounded-lg p-1.5 gap-2">
+          {/* Track Header */}
+          <div className="flex items-center justify-between bg-[#14151e] border border-[#252838] rounded-lg p-1.5">
+            <div className="flex items-center gap-1.5 truncate">
+              <Drum className="w-4 h-4 text-emerald-400 shrink-0" />
+              <div className="truncate">
+                <span className="text-xs font-bold text-white block truncate leading-none">Akustik Davul</span>
+                <span className="text-[9px] text-emerald-400/80 font-mono">Kahon & Shaker</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleTogglePercussionMute}
+                className={`w-5 h-5 rounded text-[10px] font-bold border transition-colors ${
+                  percussionMuted
+                    ? 'bg-red-500 text-white border-red-400'
+                    : 'bg-[#1e202c] border-[#303448] text-neutral-400 hover:text-white'
+                }`}
+                title="Davulu Sustur (Mute)"
+              >
+                M
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1.2"
+                step="0.05"
+                value={percussionVol}
+                onChange={(e) => handlePercussionVolChange(parseFloat(e.target.value))}
+                className="w-10 accent-emerald-500 h-1 bg-neutral-800 rounded cursor-pointer hidden sm:block"
+                title="Davul Sesi"
+              />
+            </div>
+          </div>
+
+          {/* Track Lane: Drum Pattern Clips */}
+          <div className="flex items-center gap-1.5 h-12 overflow-x-hidden">
+            {sections.map((sec, idx) => {
+              const isSelected = idx === currentSectionIndex;
+              const isPlayingThis = isPlaying && idx === currentSectionIndex;
+
+              return (
+                <div
+                  key={`drum-${sec.id}`}
+                  onClick={() => onSelectSection(idx)}
+                  style={{ flex: sec.chords.length * sec.repeats }}
+                  className={`h-full rounded-lg border cursor-pointer p-1.5 flex flex-col justify-between transition-all select-none overflow-hidden ${
+                    isPlayingThis
+                      ? 'bg-gradient-to-r from-[#0d2616] to-[#08170d] border-emerald-500'
+                      : isSelected
+                      ? 'bg-[#141c18] border-neutral-500'
+                      : 'bg-[#0f1411] border-[#1e2a22] opacity-80'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-emerald-400 font-bold truncate">🥁 {sec.drumMode}</span>
+                  </div>
+                  {/* Visual beat markers */}
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: 8 }).map((_, bIdx) => (
+                      <span
+                        key={bIdx}
+                        className={`h-1.5 flex-1 rounded-full ${
+                          sec.drumMode === 'mute'
+                            ? 'bg-neutral-800'
+                            : bIdx % 2 === 0
+                            ? 'bg-emerald-400'
+                            : 'bg-emerald-700/60'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* TRACK 3: USTA SOLO & LEAD (MELODY TRACK) */}
+        <div className="grid grid-cols-[160px_1fr] sm:grid-cols-[200px_1fr] items-center bg-[#0e0f14] border border-[#20222e] rounded-lg p-1.5 gap-2">
+          {/* Track Header */}
+          <div className="flex items-center justify-between bg-[#14151e] border border-[#252838] rounded-lg p-1.5">
+            <div className="flex items-center gap-1.5 truncate">
+              <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+              <div className="truncate">
+                <span className="text-xs font-bold text-white block truncate leading-none">Usta Solo</span>
+                <span className="text-[9px] text-cyan-400/80 font-mono">Melodi & Lead</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleToggleSoloMute}
+                className={`w-5 h-5 rounded text-[10px] font-bold border transition-colors ${
+                  soloMuted
+                    ? 'bg-red-500 text-white border-red-400'
+                    : 'bg-[#1e202c] border-[#303448] text-neutral-400 hover:text-white'
+                }`}
+                title="Soloyu Sustur (Mute)"
+              >
+                M
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1.2"
+                step="0.05"
+                value={soloVol}
+                onChange={(e) => handleSoloVolChange(parseFloat(e.target.value))}
+                className="w-10 accent-cyan-500 h-1 bg-neutral-800 rounded cursor-pointer hidden sm:block"
+                title="Solo Sesi"
+              />
+            </div>
+          </div>
+
+          {/* Track Lane: Solo Notes / Piano Roll Preview */}
+          <div className="flex items-center gap-1.5 h-12 overflow-x-hidden">
+            {sections.map((sec, idx) => {
+              const isSelected = idx === currentSectionIndex;
+
+              return (
+                <div
+                  key={`solo-${sec.id}`}
+                  onClick={() => onSelectSection(idx)}
+                  style={{ flex: sec.chords.length * sec.repeats }}
+                  className={`h-full rounded-lg border cursor-pointer p-1.5 flex flex-col justify-between transition-all select-none overflow-hidden ${
+                    isSelected
+                      ? 'bg-[#121926] border-cyan-500'
+                      : 'bg-[#0f141e] border-[#1d2738] opacity-80'
+                  }`}
+                >
+                  <span className="text-[10px] text-cyan-300 font-bold truncate">🎵 Canlı Klavyeye Sadık</span>
+                  <div className="w-full flex items-center gap-0.5">
+                    {Array.from({ length: 12 }).map((_, mIdx) => (
+                      <span
+                        key={mIdx}
+                        className="h-1 flex-1 bg-cyan-500/40 rounded-full"
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      {/* 2. SELECTED SECTION INSPECTOR & CHORD BUILDER */}
+      {/* 3. CLIP & SECTION DETAIL INSPECTOR (Ableton / Studio One Bottom Drawer) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 shrink-0">
-        {/* Left: Section Properties Editor (Cols 1-5) */}
-        <div className="lg:col-span-5 bg-[#0e0f14] border-2 border-[#20222e] rounded-xl p-3 shadow-xl space-y-3">
+        {/* Left: Section Properties & Arrangement Controls (Cols 1-5) */}
+        <div className="lg:col-span-5 bg-[#0e0f14] border-2 border-[#20222e] rounded-xl p-3 shadow-xl space-y-2.5">
           <div className="flex items-center justify-between border-b border-[#1c1e28] pb-1.5 text-xs">
             <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-              <Sliders className="w-4 h-4 text-amber-400" />
-              Kısım Ayarları: {currentSection.name}
+              <Disc3 className="w-4 h-4 text-amber-400" />
+              Kısım Özellikleri: {currentSection.name}
             </span>
-            <span className="text-[10px] text-amber-400 font-bold">
-              Kısım {currentSectionIndex + 1}/{sections.length}
+            <span className="text-[10px] text-amber-400 font-bold font-mono">
+              #{currentSectionIndex + 1} / {sections.length}
             </span>
           </div>
 
-          {/* Name input */}
+          {/* Section Name & Quick Reorder Controls */}
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-neutral-400">Kısım Adı:</label>
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] uppercase font-bold text-neutral-400">Kısım Adı:</label>
+              <div className="flex items-center gap-1">
+                <button
+                  disabled={currentSectionIndex === 0}
+                  onClick={(e) => handleMoveSection(currentSectionIndex, 'up', e)}
+                  className="px-1.5 py-0.5 rounded bg-[#1c1e28] hover:bg-[#252838] text-[10px] text-neutral-300 disabled:opacity-20"
+                  title="Öne Taşı"
+                >
+                  <ChevronUp className="w-3 h-3 inline" /> Öne
+                </button>
+                <button
+                  disabled={currentSectionIndex === sections.length - 1}
+                  onClick={(e) => handleMoveSection(currentSectionIndex, 'down', e)}
+                  className="px-1.5 py-0.5 rounded bg-[#1c1e28] hover:bg-[#252838] text-[10px] text-neutral-300 disabled:opacity-20"
+                  title="Arkaya Taşı"
+                >
+                  <ChevronDown className="w-3 h-3 inline" /> Arkaya
+                </button>
+                <button
+                  onClick={(e) => handleDuplicateSection(currentSectionIndex, e)}
+                  className="px-1.5 py-0.5 rounded bg-[#1c1e28] hover:bg-[#252838] text-[10px] text-cyan-300"
+                  title="Kopyala"
+                >
+                  <Copy className="w-3 h-3 inline" /> Kopyala
+                </button>
+                {sections.length > 1 && (
+                  <button
+                    onClick={(e) => handleRemoveSection(currentSectionIndex, e)}
+                    className="px-1.5 py-0.5 rounded bg-red-950/40 hover:bg-red-900/60 text-[10px] text-red-400"
+                    title="Sil"
+                  >
+                    <Trash2 className="w-3 h-3 inline" /> Sil
+                  </button>
+                )}
+              </div>
+            </div>
             <input
               type="text"
               value={currentSection.name}
               onChange={(e) => handleUpdateName(e.target.value)}
-              className="w-full bg-[#151722] border border-[#2a2d40] rounded-lg px-2.5 py-1.5 text-white font-bold text-xs focus:outline-none focus:border-amber-500"
+              className="w-full bg-[#14151e] border border-[#262838] rounded-lg px-2.5 py-1 text-white font-bold text-xs focus:outline-none focus:border-amber-500"
             />
           </div>
 
-          {/* Repeats selector */}
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-neutral-400">Tekrar Sayısı (Döngü):</label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {[1, 2, 4, 8].map((rep) => (
-                <button
-                  key={rep}
-                  onClick={() => handleUpdateRepeats(rep)}
-                  className={`py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                    currentSection.repeats === rep
-                      ? 'bg-amber-500 text-neutral-950 border-white'
-                      : 'bg-[#151722] border-[#2a2d40] text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  {rep}x Tekrar
-                </button>
-              ))}
+          {/* Repeats & Pattern Selector */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] uppercase font-bold text-neutral-400 block mb-1">
+                Döngü Tekrarı:
+              </label>
+              <div className="grid grid-cols-4 gap-1">
+                {[1, 2, 4, 8].map((rep) => (
+                  <button
+                    key={rep}
+                    onClick={() => handleUpdateRepeats(rep)}
+                    className={`py-1 rounded text-xs font-bold border transition-all ${
+                      currentSection.repeats === rep
+                        ? 'bg-amber-500 text-neutral-950 border-white'
+                        : 'bg-[#14151e] border-[#262838] text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    {rep}x
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] uppercase font-bold text-neutral-400 block mb-1">
+                Riff Stili:
+              </label>
+              <select
+                value={currentSection.patternId}
+                onChange={(e) => handleUpdatePattern(e.target.value)}
+                className="w-full bg-[#14151e] border border-[#262838] rounded px-2 py-1 text-xs text-white font-bold focus:outline-none cursor-pointer"
+              >
+                {Object.values(STRUM_PATTERNS).map((p) => (
+                  <option key={p.id} value={p.id} className="bg-neutral-900 text-white">
+                    {p.name.split(' ')[0]} {p.name.split(' ')[1] || ''}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Drum Mode Selector */}
+          {/* Drum Groove Selector */}
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-neutral-400">Bu Kısımdaki Davul / Ritim:</label>
+            <label className="text-[10px] uppercase font-bold text-neutral-400">
+              Bu Kısma Özel Davul Ritim Modu:
+            </label>
             <div className="grid grid-cols-2 gap-1.5">
               {(
                 [
                   { id: 'cajon-shaker', label: '🥁 Kahon + Shaker' },
                   { id: 'shaker-only', label: '🌾 Sadece Shaker' },
-                  { id: 'flamenco', label: '💃 Tam Akustik Flamenko' },
+                  { id: 'flamenco', label: '💃 Tam Flamenko' },
                   { id: 'mute', label: '🔇 Kapalı (Davulsuz)' }
                 ] as { id: DrumMode; label: string }[]
               ).map((mode) => (
                 <button
                   key={mode.id}
                   onClick={() => handleUpdateDrumMode(mode.id)}
-                  className={`p-2 rounded-lg text-left text-xs font-bold border transition-all truncate ${
+                  className={`p-1.5 rounded-lg text-left text-xs font-bold border transition-all truncate ${
                     currentSection.drumMode === mode.id
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500'
-                      : 'bg-[#151722] border-[#2a2d40] text-neutral-400 hover:text-white'
+                      : 'bg-[#14151e] border-[#262838] text-neutral-400 hover:text-white'
                   }`}
                 >
                   {mode.label}
@@ -352,32 +715,32 @@ export const StudioView: React.FC<StudioViewProps> = ({
           </div>
         </div>
 
-        {/* Right: Section Chord Progression Arranger (Cols 6-12) */}
+        {/* Right: Section Chord Arranger & Diatonic Quick Palette (Cols 6-12) */}
         <div className="lg:col-span-7 bg-[#0e0f14] border-2 border-[#20222e] rounded-xl p-3 shadow-xl flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between border-b border-[#1c1e28] pb-1.5 text-xs mb-2">
               <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                 <Music className="w-4 h-4 text-emerald-400" />
-                Akor Dizilimi ({currentSection.chords.length} Bar):
+                Akor Sıralaması ({currentSection.chords.length} Bar):
               </span>
               <span className="text-[10px] text-neutral-400">
-                Aşağıdaki akorlara tıklayarak sıraya ekleyin
+                Aşağıdaki akorlara tıklayarak bölüme yeni barlar ekleyin
               </span>
             </div>
 
-            {/* Currently arranged chords */}
+            {/* Current chord blocks in this section */}
             <div className="flex flex-wrap gap-2 my-2">
               {currentSection.chords.map((chordId, idx) => (
                 <div
                   key={idx}
-                  className="group relative px-3 py-2 rounded-xl border-2 border-[#262838] bg-[#14151e] flex items-center gap-2"
+                  className="group relative px-3 py-1.5 rounded-xl border-2 border-[#262838] bg-[#14151e] flex items-center gap-2 select-none"
                 >
                   <span className="text-[10px] text-neutral-500 font-bold">{idx + 1}. Bar</span>
                   <span className="text-sm font-black font-mono text-white">{chordId}</span>
                   {currentSection.chords.length > 1 && (
                     <button
                       onClick={() => handleRemoveChord(idx)}
-                      className="text-neutral-500 hover:text-red-400 transition-colors"
+                      className="text-neutral-500 hover:text-red-400 transition-colors ml-1"
                       title="Akoru kaldır"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -389,8 +752,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
           </div>
 
           {/* Quick Diatonic Add Palette */}
-          <div className="border-t border-[#1c1e28] pt-2.5">
-            <span className="text-[10px] uppercase font-bold text-neutral-400 block mb-1.5">
+          <div className="border-t border-[#1c1e28] pt-2">
+            <span className="text-[10px] uppercase font-bold text-neutral-400 block mb-1">
               Tona Uygun Akor Ekle ({currentRoot} {currentScaleId}):
             </span>
             <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">

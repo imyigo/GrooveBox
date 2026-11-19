@@ -37,7 +37,6 @@ export class AcousticStringVoice {
 
     // 1. String Envelope & Volume
     const stringGain = ctx.createGain();
-    stringGain.connect(this.outputNode);
 
     // Bass strings have longer sustain, treble strings decay faster
     const baseDecay = isMuted 
