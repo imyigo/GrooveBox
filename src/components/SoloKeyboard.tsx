@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { MUSICAL_SCALES, ROOT_NOTES, getScaleNotes } from '../config/scales';
 import { snapMidiToChord, getChordPitchClasses } from '../config/chords';
 import { audioEngine } from '../audio/AudioEngine';
@@ -91,6 +91,9 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
     audioEngine.setSoloInstrument(type);
   };
 
+  // Track physically held keys to 100% prevent OS keyboard auto-repeat retriggering
+  const heldKeysRef = useRef<Set<string>>(new Set());
+
   // FL Studio 3-Row Keyboard Listener (KeyDown & KeyUp for authentic note release)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -98,7 +101,20 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
         return;
       }
 
+      // 1. Block OS keyboard auto-repeat completely!
+      if (e.repeat) {
+        e.preventDefault();
+        return;
+      }
+
       const key = e.key.toLowerCase();
+
+      // 2. Extra safety: if key is already held down in set, do NOT retrigger
+      if (heldKeysRef.current.has(key)) {
+        e.preventDefault();
+        return;
+      }
+      heldKeysRef.current.add(key);
 
       // Check Upper Row (Octave +1)
       const upperIdx = ROW_UPPER_KEYS.indexOf(key);
@@ -139,14 +155,23 @@ export const SoloKeyboard: React.FC<SoloKeyboardProps> = ({
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
         return;
       }
+      const key = e.key.toLowerCase();
+      heldKeysRef.current.delete(key);
+      releaseSoloNote();
+    };
+
+    const handleBlur = () => {
+      heldKeysRef.current.clear();
       releaseSoloNote();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, [upperNotes, homeNotes, lowerNotes, triggerSoloNote, releaseSoloNote]);
 
