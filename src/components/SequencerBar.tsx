@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Play, Square, RotateCcw, Download } from 'lucide-react';
+import { Play, Square, RotateCcw, Download, Drum } from 'lucide-react';
 
 interface SequencerBarProps {
   isPlaying: boolean;
@@ -10,6 +10,8 @@ interface SequencerBarProps {
   onSwingChange: (swing: number) => void;
   onExport: () => void;
   onReset: () => void;
+  percussionOn: boolean;
+  onTogglePercussion: () => void;
 }
 
 export const SequencerBar: React.FC<SequencerBarProps> = ({
@@ -20,7 +22,9 @@ export const SequencerBar: React.FC<SequencerBarProps> = ({
   swing,
   onSwingChange,
   onExport,
-  onReset
+  onReset,
+  percussionOn,
+  onTogglePercussion
 }) => {
   // Tap tempo logic
   const tapTimes = useRef<number[]>([]);
@@ -79,6 +83,20 @@ export const SequencerBar: React.FC<SequencerBarProps> = ({
           title="Başa Sar"
         >
           <RotateCcw className="w-4 h-4" />
+        </button>
+
+        {/* Akustik Ritim Aç / Kapat Butonu */}
+        <button
+          onClick={onTogglePercussion}
+          className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all ${
+            percussionOn
+              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+              : 'bg-neutral-950 text-neutral-500 border-neutral-800'
+          }`}
+          title="Kahon & Shaker ritmini aç veya kapat"
+        >
+          <Drum className="w-4 h-4" />
+          <span>{percussionOn ? 'Ritim: Açık' : 'Ritim: Kapalı'}</span>
         </button>
       </div>
 

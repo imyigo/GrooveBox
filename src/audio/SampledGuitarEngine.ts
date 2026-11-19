@@ -1,7 +1,6 @@
 /**
- * Real Acoustic Guitar Sampled Engine
- * Loads and plays genuine studio-recorded acoustic steel guitar samples
- * for every string and fret.
+ * Real Acoustic Sampled Multi-Instrument Engine
+ * Supports Warm Nylon Guitar, Steel Dreadnought, and Acoustic Bass
  */
 
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -12,7 +11,6 @@ export function midiToNoteName(midi: number): string {
   return `${name}${octave}`;
 }
 
-// Base MIDI numbers for guitar strings (0 = Low E ... 5 = High E)
 export const STRING_BASE_MIDI = [40, 45, 50, 55, 59, 64];
 
 export function getGuitarMidi(stringIndex: number, fret: number): number {
@@ -20,18 +18,57 @@ export function getGuitarMidi(stringIndex: number, fret: number): number {
   return STRING_BASE_MIDI[stringIndex] + fret;
 }
 
+export type AcousticInstrumentType = 'nylon' | 'steel' | 'bass';
+
 export class SampledGuitarEngine {
   private ctx: AudioContext | null = null;
-  private sampleBuffers: Map<string, AudioBuffer> = new Map();
-  private sampleRawData: Record<string, string> | null = null;
-  private isLoading: boolean = false;
+  private currentChordInstrument: AcousticInstrumentType = 'nylon';
+  private currentSoloInstrument: AcousticInstrumentType = 'steel';
+
+  // Cache buffers for each instrument type
+  private sampleBuffers: Record<AcousticInstrumentType, Map<string, AudioBuffer>> = {
+    nylon: new Map(),
+    steel: new Map(),
+    bass: new Map()
+  };
+
+  private sampleRawData: Record<AcousticInstrumentType, Record<string, string> | null> = {
+    nylon: null,
+    steel: null,
+    bass: null
+  };
+
   private isLoaded: boolean = false;
-  private loadProgress: number = 0; // 0 to 100
+  private loadProgress: number = 0;
   private onProgressListeners: ((progress: number, isLoaded: boolean) => void)[] = [];
 
   public init(ctx: AudioContext): void {
     this.ctx = ctx;
-    this.loadSamples();
+    this.loadSamples('nylon');
+    this.loadSamples('steel');
+    this.loadSamples('bass');
+  }
+
+  public setChordInstrument(type: AcousticInstrumentType): void {
+    this.currentChordInstrument = type;
+    if (this.sampleBuffers[type].size === 0) {
+      this.loadSamples(type);
+    }
+  }
+
+  public getChordInstrument(): AcousticInstrumentType {
+    return this.currentChordInstrument;
+  }
+
+  public setSoloInstrument(type: AcousticInstrumentType): void {
+    this.currentSoloInstrument = type;
+    if (this.sampleBuffers[type].size === 0) {
+      this.loadSamples(type);
+    }
+  }
+
+  public getSoloInstrument(): AcousticInstrumentType {
+    return this.currentSoloInstrument;
   }
 
   public onProgress(listener: (progress: number, isLoaded: boolean) => void): () => void {
@@ -54,66 +91,61 @@ export class SampledGuitarEngine {
     this.onProgressListeners.forEach((l) => l(this.loadProgress, this.isLoaded));
   }
 
-  /**
-   * Fetches JSON of base64 MP3s and decodes priority guitar range first
-   */
-  public async loadSamples(): Promise<void> {
-    if (this.isLoading || this.isLoaded) return;
-    this.isLoading = true;
+  public async loadSamples(type: AcousticInstrumentType): Promise<void> {
+    if (this.sampleBuffers[type].size > 20) return;
 
     try {
-      const res = await fetch('/samples/acoustic_guitar_steel.json');
-      if (!res.ok) throw new Error('Failed to load sample bank');
-      this.sampleRawData = await res.json();
+      const fileMap: Record<AcousticInstrumentType, string> = {
+        nylon: '/samples/acoustic_guitar_nylon.json',
+        steel: '/samples/acoustic_guitar_steel.json',
+        bass: '/samples/acoustic_bass.json'
+      };
 
-      if (!this.sampleRawData) return;
+      const res = await fetch(fileMap[type]);
+      if (!res.ok) return;
+      const rawData = await res.json();
+      this.sampleRawData[type] = rawData;
 
-      const allKeys = Object.keys(this.sampleRawData);
-      const totalKeys = allKeys.length;
-
-      // Priority notes: guitar playing range E2 (40) to E5 (76)
+      const allKeys = Object.keys(rawData);
+      // Priority range
       const priorityKeys = allKeys.filter((key) => {
-        const octave = parseInt(key.slice(-1), 10);
-        return octave >= 2 && octave <= 5;
+        const oct = parseInt(key.slice(-1), 10);
+        return type === 'bass' ? oct >= 1 && oct <= 4 : oct >= 2 && oct <= 5;
       });
 
-      // Decode priority notes first so user can play immediately
-      let decodedCount = 0;
-
-      for (const key of priorityKeys) {
-        await this.decodeSingleNote(key);
-        decodedCount++;
-        this.loadProgress = Math.min(100, Math.round((decodedCount / totalKeys) * 100));
+      let decoded = 0;
+      for (const k of priorityKeys) {
+        await this.decodeSingleNote(k, type);
+        decoded++;
+        this.loadProgress = Math.min(100, Math.round((decoded / priorityKeys.length) * 100));
         this.notifyProgress();
       }
 
       this.isLoaded = true;
-      this.isLoading = false;
       this.loadProgress = 100;
       this.notifyProgress();
 
-      // Decode remainder in background
-      const otherKeys = allKeys.filter((k) => !priorityKeys.includes(k));
-      for (const key of otherKeys) {
-        this.decodeSingleNote(key).catch(() => {});
+      // Background remainder
+      const rest = allKeys.filter((k) => !priorityKeys.includes(k));
+      for (const k of rest) {
+        this.decodeSingleNote(k, type).catch(() => {});
       }
-    } catch (err) {
-      console.warn('Real acoustic sample loading fallback:', err);
-      this.isLoading = false;
+    } catch (e) {
+      console.warn('Sample load fallback:', e);
     }
   }
 
-  private async decodeSingleNote(noteName: string): Promise<AudioBuffer | null> {
-    if (this.sampleBuffers.has(noteName)) {
-      return this.sampleBuffers.get(noteName)!;
+  private async decodeSingleNote(noteName: string, type: AcousticInstrumentType): Promise<AudioBuffer | null> {
+    const bufferMap = this.sampleBuffers[type];
+    if (bufferMap.has(noteName)) {
+      return bufferMap.get(noteName)!;
     }
 
-    if (!this.sampleRawData || !this.sampleRawData[noteName] || !this.ctx) {
-      return null;
-    }
+    const rawData = this.sampleRawData[type];
+    if (!rawData || !rawData[noteName] || !this.ctx) return null;
 
     try {
-      const dataUrl = this.sampleRawData[noteName];
+      const dataUrl = rawData[noteName];
       const base64 = dataUrl.split(',')[1] || dataUrl;
       const binaryString = window.atob(base64);
       const len = binaryString.length;
@@ -123,31 +155,32 @@ export class SampledGuitarEngine {
       }
 
       const audioBuffer = await this.ctx.decodeAudioData(bytes.buffer.slice(0));
-      this.sampleBuffers.set(noteName, audioBuffer);
+      bufferMap.set(noteName, audioBuffer);
       return audioBuffer;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
 
   /**
-   * Plays a real recorded studio acoustic guitar note
+   * Plays a real recorded note on the chosen instrument
    */
   public playNote(
     midiNote: number,
     time: number,
     velocity: number = 0.85,
     destination: AudioNode,
-    isMuted: boolean = false
+    isMuted: boolean = false,
+    instrument?: AcousticInstrumentType
   ): boolean {
     if (!this.ctx || midiNote < 0) return false;
 
+    const chosenInst = instrument ?? this.currentChordInstrument;
     const noteName = midiToNoteName(midiNote);
-    const buffer = this.sampleBuffers.get(noteName);
+    const buffer = this.sampleBuffers[chosenInst].get(noteName);
 
     if (!buffer) {
-      // If exact note not loaded yet, try to decode or return false for fallback
-      this.decodeSingleNote(noteName);
+      this.decodeSingleNote(noteName, chosenInst);
       return false;
     }
 
@@ -159,15 +192,13 @@ export class SampledGuitarEngine {
 
     const gainNode = ctx.createGain();
     const peakVolume = Math.min(1.2, velocity * (isMuted ? 0.45 : 0.95));
-
     gainNode.gain.setValueAtTime(peakVolume, now);
 
     if (isMuted) {
-      // Palm mute: fast decay
       gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
     } else {
-      // Real natural acoustic guitar sustain decay
-      gainNode.gain.setValueAtTime(peakVolume, now + 1.2);
+      const sustainTime = chosenInst === 'bass' ? 2.5 : 1.5;
+      gainNode.gain.setValueAtTime(peakVolume, now + sustainTime);
       gainNode.gain.exponentialRampToValueAtTime(0.001, now + buffer.duration);
     }
 

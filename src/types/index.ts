@@ -4,10 +4,7 @@ export interface GuitarChord {
   displayName: string;
   root: string;
   type: 'major' | 'minor' | '7' | 'maj7' | 'm7' | 'sus4' | 'add9';
-  // 6 strings from low E (6th) to high E (1st).
-  // -1 means muted (X), 0 means open string, 1-12 fret number
   frets: [number, number, number, number, number, number];
-  // Fingers to use: 0 for open, 1=index, 2=middle, 3=ring, 4=pinky, -1 for mute
   fingers?: [number, number, number, number, number, number];
   category: 'open' | 'barre' | 'extended';
 }
@@ -33,10 +30,11 @@ export interface StrumPattern {
 
 export interface SongSection {
   id: string;
-  name: string; // e.g. "Intro", "Verse", "Chorus", "Riff"
-  chords: string[]; // Chord IDs (repeats or progression)
+  name: string; // e.g. "Intro (Giriş)", "Verse (Söz)", "Chorus (Nakarat)", "Solo (Köprü)"
+  chords: string[]; // Chord IDs
   patternId: string;
-  bars: number;
+  repeats: number; // 1, 2, 4, 8 (or 0 for infinite loop)
+  color: string;
 }
 
 export interface BodyPreset {
@@ -52,11 +50,11 @@ export interface BodyPreset {
 }
 
 export interface StringState {
-  index: number; // 0 (low E) to 5 (high E)
+  index: number;
   name: string;
   baseFreq: number;
   currentFreq: number;
-  fret: number; // -1 if muted
+  fret: number;
   isVibrating: boolean;
   amplitude: number;
 }

@@ -1,6 +1,7 @@
 import { AcousticStringVoice } from './AcousticString';
 import { createAcousticBodyImpulse } from './ImpulseGenerator';
-import { sampledGuitarEngine, getGuitarMidi } from './SampledGuitarEngine';
+import { sampledGuitarEngine, getGuitarMidi, AcousticInstrumentType } from './SampledGuitarEngine';
+import { AcousticPercussion } from './AcousticPercussion';
 import { BodyPreset } from '../types';
 
 export class AudioEngine {
@@ -26,6 +27,9 @@ export class AudioEngine {
   // 6 String Stereo Panners & Voices
   private stringPanners: StereoPannerNode[] = [];
   private stringVoices: AcousticStringVoice[] = [];
+
+  // Acoustic Percussion Synthesizer
+  public percussion!: AcousticPercussion;
 
   // Active settings
   public preset: BodyPreset = {
@@ -141,10 +145,36 @@ export class AudioEngine {
       this.stringVoices.push(new AcousticStringVoice(ctx, targetNode));
     }
 
+    // Initialize Acoustic Percussion
+    this.percussion = new AcousticPercussion(ctx, this.bodyEqMid);
+
     // Initialize Real Sample Engine
     sampledGuitarEngine.init(ctx);
 
     return ctx;
+  }
+
+  public setChordInstrument(type: AcousticInstrumentType): void {
+    sampledGuitarEngine.setChordInstrument(type);
+  }
+
+  public setSoloInstrument(type: AcousticInstrumentType): void {
+    sampledGuitarEngine.setSoloInstrument(type);
+  }
+
+  public getSoloInstrument(): AcousticInstrumentType {
+    return sampledGuitarEngine.getSoloInstrument();
+  }
+
+  /**
+   * Plays a solo note by MIDI number with the chosen solo instrument
+   */
+  public playSoloMidiNote(midi: number, time?: number, velocity: number = 0.9): void {
+    if (!this.ctx) this.init();
+    const playTime = time ?? this.ctx!.currentTime;
+    const targetNode = this.bodyEqHigh;
+    const soloInst = sampledGuitarEngine.getSoloInstrument();
+    sampledGuitarEngine.playNote(midi, playTime, velocity, targetNode, false, soloInst);
   }
 
   public async unlock(): Promise<boolean> {
