@@ -11,3 +11,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Xcode & macOS Native
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/

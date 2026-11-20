@@ -1,0 +1,35 @@
+name: AcousticGrooveBox
+options:
+  bundleIdPrefix: com.imyigo
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ENABLE_HARDENED_RUNTIME: YES
+    COMBINE_HIDPI_IMAGES: YES
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_IDENTITY: "-"
+
+targets:
+  AcousticGrooveBox:
+    type: application
+    platform: macOS
+    sources:
+      - path: AcousticGrooveBox
+    settings:
+      base:
+        PRODUCT_NAME: "AcousticGrooveBox"
+        PRODUCT_BUNDLE_IDENTIFIER: "com.imyigo.AcousticGrooveBox"
+        INFOPLIST_FILE: "AcousticGrooveBox/Resources/Info.plist"
+        CODE_SIGN_ENTITLEMENTS: "AcousticGrooveBox/Resources/AcousticGrooveBox.entitlements"
+        ASSETCATALOG_COMPILER_APPICON_NAME: "AppIcon"
+    dependencies:
+      - sdk: AVFoundation.framework
+      - sdk: AudioToolbox.framework
+      - sdk: CoreAudio.framework
+      - sdk: Accelerate.framework
+      - sdk: SwiftUI.framework
