@@ -195,5 +195,8 @@ public struct MainAppView: View {
         }
         .frame(minWidth: 960, minHeight: 680)
         .background(Color(white: 0.03))
+        .onAppear {
+            KeyboardController.shared.setupEventMonitor()
+        }
     }
 }

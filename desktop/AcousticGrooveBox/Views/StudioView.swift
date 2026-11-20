@@ -166,6 +166,9 @@ public struct StudioView: View {
             // 4. APPLE LOGIC PRO SMART CONTROLS (Stüdyo Modu)
             SmartControlsView()
 
+            // 5. CANLI QWERTY MUSICAL TYPING KLAVYE
+            MusicalTypingView()
+
             Spacer()
         }
         .padding(10)

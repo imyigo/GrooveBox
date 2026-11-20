@@ -205,10 +205,10 @@ public struct GrooveBoxView: View {
                 // 5. APPLE LOGIC PRO SMART CONTROLS
                 SmartControlsView(instrument: selectedInstrument)
 
-                // 6. SOLOCU VE DAVUL TUŞ TAKIMI
-                VStack(alignment: .leading, spacing: 6) {
+                // 6. QWERTY MUSICAL TYPING & ENSTRÜMAN SEÇİMİ
+                VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Label("USTA SOLOCU & DAVUL (SIFIR HATA AKOR UYUMU)", systemImage: "pianokeys")
+                        Label("CANLI ENSTRÜMAN SEÇİMİ & SOLO MOTORU", systemImage: "pianokeys")
                             .font(.system(size: 10, weight: .black, design: .monospaced))
                             .foregroundColor(.gray)
                         Spacer()
@@ -217,7 +217,10 @@ public struct GrooveBoxView: View {
                     // Enstrüman Seçimi
                     HStack(spacing: 4) {
                         ForEach(AcousticInstrumentType.allCases) { inst in
-                            Button(action: { selectedInstrument = inst }) {
+                            Button(action: {
+                                selectedInstrument = inst
+                                audioEngine.soloInstrument = inst
+                            }) {
                                 Text(inst.name)
                                     .font(.system(size: 10, weight: selectedInstrument == inst ? .bold : .medium))
                                     .padding(.horizontal, 8)
@@ -230,34 +233,12 @@ public struct GrooveBoxView: View {
                         }
                     }
 
-                    // FL Studio tarzı dokunsal solo tuşları
-                    let currentChord = ChordLibrary.chordNamed(currentSec.chords.indices.contains(audioEngine.currentChordIndex) ? currentSec.chords[audioEngine.currentChordIndex] : "Am")
-                    HStack(spacing: 4) {
-                        ForEach(0..<12) { keyIdx in
-                            let noteFreq = 220.0 * pow(2.0, Double(keyIdx) / 12.0)
-                            Button(action: {
-                                if selectedInstrument == .drums {
-                                    audioEngine.playDrumHit(keyIdx % 2 == 0 ? "kick" : "snare")
-                                } else {
-                                    audioEngine.playSoloNote(freq: noteFreq, duration: 2.5, velocity: 0.9, instrument: selectedInstrument)
-                                }
-                            }) {
-                                VStack {
-                                    Text("Nota \(keyIdx + 1)")
-                                        .font(.system(size: 8, weight: .bold))
-                                    Image(systemName: "music.note")
-                                        .font(.system(size: 10))
-                                }
-                                .frame(maxWidth: .infinity, minHeight: 46)
-                                .background(Color(white: 0.10))
-                                .foregroundColor(.white)
-                                .cornerRadius(6)
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.15), lineWidth: 1))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    // QWERTY Musical Typing Arayüzü (Bilgisayar Klavyesi Desteği)
+                    MusicalTypingView()
                 }
+                .padding(10)
+                .background(Color(white: 0.08))
+                .cornerRadius(12)
                 .padding(10)
                 .background(Color(white: 0.08))
                 .cornerRadius(12)

@@ -33,3 +33,29 @@ targets:
       - sdk: CoreAudio.framework
       - sdk: Accelerate.framework
       - sdk: SwiftUI.framework
+
+  AcousticGrooveBoxTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: AcousticGrooveBoxTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: "com.imyigo.AcousticGrooveBoxTests"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/AcousticGrooveBox.app/Contents/MacOS/AcousticGrooveBox"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    dependencies:
+      - target: AcousticGrooveBox
+
+schemes:
+  AcousticGrooveBox:
+    build:
+      targets:
+        AcousticGrooveBox: all
+        AcousticGrooveBoxTests: [test]
+    test:
+      config: Debug
+      targets:
+        - AcousticGrooveBoxTests
