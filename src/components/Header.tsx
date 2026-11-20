@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Play, Square, Guitar, CheckCircle2, Drum, Layers, Zap, Radio, Sliders } from 'lucide-react';
+import { Volume2, VolumeX, Play, Square, Guitar, CheckCircle2, Drum, Radio, Sliders } from 'lucide-react';
 import { GUITAR_PRESETS } from '../config/presets';
 import { BodyPreset } from '../types';
 import { sampledGuitarEngine, AcousticInstrumentType } from '../audio/SampledGuitarEngine';
 
-export type AppViewMode = 'akor' | 'live' | 'hybrid' | 'studio';
+export type AppViewMode = 'groovebox' | 'studio';
 
 interface HeaderProps {
   isPlaying: boolean;
@@ -15,7 +15,7 @@ interface HeaderProps {
   onVolumeChange: (vol: number) => void;
   chordInstrument: AcousticInstrumentType;
   onChordInstrumentChange: (type: AcousticInstrumentType) => void;
-  // 4 Modes: Akor, Live, Hibrit, Stüdyo
+  // 2 Pure Modes: GrooveBox & Stüdyo
   viewMode: AppViewMode;
   onViewModeChange: (mode: AppViewMode) => void;
   // Prominent Rhythm Toggle
@@ -91,58 +91,32 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* CENTER: 4-MODE WORKFLOW SWITCHER (Akor, Live, Hibrit, Stüdyo) */}
+      {/* CENTER: 2-MODE WORKFLOW SWITCHER (GROOVEBOX & STÜDYO) */}
       <div className="flex items-center bg-neutral-950 border-2 border-neutral-800 rounded-xl p-1 gap-1 shadow-inner">
         <button
-          onClick={() => onViewModeChange('akor')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-            viewMode === 'akor'
-              ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-950/40'
+          onClick={() => onViewModeChange('groovebox')}
+          className={`px-4 py-2 rounded-lg text-xs font-extrabold flex items-center gap-2 transition-all ${
+            viewMode === 'groovebox'
+              ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 shadow-lg shadow-amber-950/40 ring-1 ring-amber-400'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
           }`}
-          title="7 Derece Diatonik Akor Matrisi, Kadanslar ve Fretboard"
+          title="Mod 1: GrooveBox — Akor Riff Makinesi, Hit Şablonlar, Söz Defteri, Solo ve Canlı Performans"
         >
-          <Layers className="w-3.5 h-3.5" />
-          <span>🎼 AKOR</span>
-        </button>
-
-        <button
-          onClick={() => onViewModeChange('live')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-            viewMode === 'live'
-              ? 'bg-emerald-500 text-neutral-950 shadow-md shadow-emerald-950/40'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-          }`}
-          title="Ableton Sahne Fırlatıcı, Canlı Akor Padleri ve Solo/Davul Klavyesi"
-        >
-          <Radio className="w-3.5 h-3.5" />
-          <span>🎛️ LIVE</span>
-        </button>
-
-        <button
-          onClick={() => onViewModeChange('hybrid')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-            viewMode === 'hybrid'
-              ? 'bg-cyan-500 text-neutral-950 shadow-md shadow-cyan-950/40'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-          }`}
-          title="Akor + Solo + Ritim aynı ekranda hibrit groovebox çalışma alanı"
-        >
-          <Zap className="w-3.5 h-3.5" />
-          <span>⚡ HİBRİT</span>
+          <Radio className="w-4 h-4" />
+          <span>🎛️ GROOVEBOX MODU</span>
         </button>
 
         <button
           onClick={() => onViewModeChange('studio')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+          className={`px-4 py-2 rounded-lg text-xs font-extrabold flex items-center gap-2 transition-all ${
             viewMode === 'studio'
-              ? 'bg-purple-500 text-neutral-950 shadow-md shadow-purple-950/40'
+              ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-lg shadow-purple-950/40 ring-1 ring-purple-400'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
           }`}
-          title="Şarkı Dizilimi (Timeline Arrangement), Kısımları ekleme/çıkarma ve şarkı kurgusu"
+          title="Mod 2: Stüdyo — Çok Kanallı DAW Zaman Çizelgesi, Vokal / Mikrofon Kaydı ve Aranje"
         >
-          <Sliders className="w-3.5 h-3.5" />
-          <span>🎙️ STÜDYO</span>
+          <Sliders className="w-4 h-4" />
+          <span>🎙️ STÜDYO MODU</span>
         </button>
       </div>
 
@@ -178,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
           />
         </button>
 
-        {/* Chord Guitar Tone Switcher (Nylon / Steel) */}
+        {/* Kemik Akor Enstrümanı (Naylon / Çelik / Piyano) */}
         <div className="hidden lg:flex items-center bg-neutral-950 border border-neutral-800 rounded-xl p-1 gap-1">
           <button
             onClick={() => onChordInstrumentChange('nylon')}
@@ -187,9 +161,9 @@ export const Header: React.FC<HeaderProps> = ({
                 ? 'bg-amber-600 text-white shadow-sm'
                 : 'text-neutral-400 hover:text-white'
             }`}
-            title="Sıcak naylon telli klasik akustik"
+            title="Sıcak naylon telli klasik akustik gitar"
           >
-            Sıcak Naylon
+            🎸 Naylon
           </button>
           <button
             onClick={() => onChordInstrumentChange('steel')}
@@ -198,9 +172,20 @@ export const Header: React.FC<HeaderProps> = ({
                 ? 'bg-amber-600 text-white shadow-sm'
                 : 'text-neutral-400 hover:text-white'
             }`}
-            title="Parlak çelik telli dreadnought"
+            title="Parlak çelik telli akustik gitar"
           >
-            Çelik Telli
+            🎸 Çelik
+          </button>
+          <button
+            onClick={() => onChordInstrumentChange('piano')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+              chordInstrument === 'piano'
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+            title="Konser Kuyruklu Piyanosu"
+          >
+            🎹 Piyano
           </button>
         </div>
 

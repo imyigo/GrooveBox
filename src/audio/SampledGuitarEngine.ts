@@ -26,13 +26,14 @@ export type AcousticInstrumentType =
   | 'harmonica'
   | 'steel'
   | 'nylon'
+  | 'piano'
   | 'bass'
   | 'drums';
 
 export interface InstrumentMeta {
   id: AcousticInstrumentType;
   name: string;
-  category: 'strings' | 'woodwind' | 'brass' | 'reed' | 'guitar' | 'bass' | 'percussion';
+  category: 'strings' | 'woodwind' | 'brass' | 'reed' | 'guitar' | 'piano' | 'bass' | 'percussion';
   icon: string;
   defaultOctave: number;
 }
@@ -58,6 +59,8 @@ export const INSTRUMENT_ENVELOPES: Record<AcousticInstrumentType, InstrumentEnve
   nylon: { attackSec: 0.004, decaySec: 0.75, sustainLevel: 0.38, maxHoldSec: 3.6, releaseSec: 0.28 },
   // Çelik Akustik: Parlak fosfor bronz tınlama ve 4.0s zengin sustain
   steel: { attackSec: 0.003, decaySec: 0.85, sustainLevel: 0.42, maxHoldSec: 4.0, releaseSec: 0.30 },
+  // Konser Piyanosu: Zengin çekiç vuruşu ve geniş gövde sustaini
+  piano: { attackSec: 0.004, decaySec: 0.95, sustainLevel: 0.45, maxHoldSec: 4.5, releaseSec: 0.35 },
   // Akustik Bas: Dolgun ahşap kontrbas vuruşu
   bass: { attackSec: 0.005, decaySec: 0.60, sustainLevel: 0.32, maxHoldSec: 3.2, releaseSec: 0.24 },
   // Davul: Akustik Kahon & Doğal Perküsyon
@@ -73,12 +76,13 @@ interface ActiveSoloVoice {
 }
 
 export const INSTRUMENT_METAS: Record<AcousticInstrumentType, InstrumentMeta> = {
+  nylon: { id: 'nylon', name: 'Sıcak Naylon Gitar', category: 'guitar', icon: '🎸', defaultOctave: 3 },
+  steel: { id: 'steel', name: 'Çelik Akustik Gitar', category: 'guitar', icon: '🎸', defaultOctave: 3 },
+  piano: { id: 'piano', name: 'Kuyruklu Piyano', category: 'piano', icon: '🎹', defaultOctave: 3 },
   violin: { id: 'violin', name: 'Keman', category: 'strings', icon: '🎻', defaultOctave: 4 },
   clarinet: { id: 'clarinet', name: 'Klarnet', category: 'woodwind', icon: '🎷', defaultOctave: 4 },
   alto_sax: { id: 'alto_sax', name: 'Saksafon', category: 'brass', icon: '🎷', defaultOctave: 3 },
   harmonica: { id: 'harmonica', name: 'Mızıka', category: 'reed', icon: '🪗', defaultOctave: 4 },
-  nylon: { id: 'nylon', name: 'Sıcak Naylon', category: 'guitar', icon: '🎸', defaultOctave: 3 },
-  steel: { id: 'steel', name: 'Çelik Akustik', category: 'guitar', icon: '🎸', defaultOctave: 3 },
   bass: { id: 'bass', name: 'Akustik Bas', category: 'bass', icon: '🎻', defaultOctave: 2 },
   drums: { id: 'drums', name: 'Davul', category: 'percussion', icon: '🥁', defaultOctave: 3 }
 };
@@ -96,6 +100,7 @@ export class SampledGuitarEngine {
     harmonica: new Map(),
     nylon: new Map(),
     steel: new Map(),
+    piano: new Map(),
     bass: new Map(),
     drums: new Map()
   };
@@ -107,6 +112,7 @@ export class SampledGuitarEngine {
     harmonica: null,
     nylon: null,
     steel: null,
+    piano: null,
     bass: null,
     drums: null
   };
@@ -153,13 +159,13 @@ export class SampledGuitarEngine {
   }
 
   public async loadSamples(type: AcousticInstrumentType): Promise<void> {
-    if (type === 'drums') {
-      return; // Synthesized organically via AcousticPercussion!
+    if (type === 'drums' || type === 'piano') {
+      return; // Synthesized organically via acoustic physical modeling!
     }
     if (this.sampleBuffers[type].size > 20) return;
 
     try {
-      const fileMap: Record<Exclude<AcousticInstrumentType, 'drums'>, string> = {
+      const fileMap: Record<Exclude<AcousticInstrumentType, 'drums' | 'piano'>, string> = {
         violin: '/samples/violin.json',
         clarinet: '/samples/clarinet.json',
         alto_sax: '/samples/alto_sax.json',

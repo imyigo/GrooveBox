@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GUITAR_CHORDS } from '../config/chords';
 import { getDiatonicChords } from '../config/scales';
 import { STRUM_PATTERNS } from '../config/patterns';
@@ -6,6 +6,7 @@ import { GuitarChord, SongSection, DrumMode } from '../types';
 import { audioEngine } from '../audio/AudioEngine';
 import { songSequencer } from '../audio/Sequencer';
 import { strumEngine } from '../audio/StrumEngine';
+import { audioRecorder, RecordedVocalTake } from '../audio/AudioRecorderEngine';
 import {
   Play,
   Square,
@@ -21,7 +22,10 @@ import {
   Drum,
   Disc3,
   Layers,
-  Sparkles
+  Sparkles,
+  Mic,
+  MicOff,
+  FileText
 } from 'lucide-react';
 
 interface StudioViewProps {
@@ -39,6 +43,8 @@ interface StudioViewProps {
   onTogglePlay: () => void;
   bpm: number;
   currentRepeat?: number;
+  lyrics?: Record<string, string>;
+  onLyricsChange?: (sectionId: string, text: string) => void;
 }
 
 export const StudioView: React.FC<StudioViewProps> = ({
@@ -55,7 +61,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
   isPlaying,
   onTogglePlay,
   bpm,
-  currentRepeat = 0
+  currentRepeat = 0,
+  lyrics,
+  onLyricsChange
 }) => {
   const currentSection = sections[currentSectionIndex] || sections[0];
   const diatonicChords = getDiatonicChords(currentRoot, currentScaleId);
@@ -69,6 +77,47 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const [guitarVol, setGuitarVol] = useState(0.85);
   const [percussionVol, setPercussionVol] = useState(0.85);
   const [soloVol, setSoloVol] = useState(0.95);
+
+  // Vokal / Mikrofon Kaydı State'leri
+  const [vocalTake, setVocalTake] = useState<RecordedVocalTake | null>(null);
+  const [isRecordingVocal, setIsRecordingVocal] = useState<boolean>(false);
+  const [vocalVol, setVocalVol] = useState<number>(0.95);
+  const [vocalMuted, setVocalMuted] = useState<boolean>(false);
+  const [showLyricsInStudio, setShowLyricsInStudio] = useState<boolean>(false);
+
+  useEffect(() => {
+    return audioRecorder.subscribe((take, isRec) => {
+      setVocalTake(take);
+      setIsRecordingVocal(isRec);
+    });
+  }, []);
+
+  // Vokal Kaydını Başlat / Durdur
+  const handleToggleVocalRecord = async () => {
+    if (isRecordingVocal) {
+      audioRecorder.stopRecording();
+    } else {
+      if (!isPlaying) {
+        onTogglePlay();
+      }
+      await audioRecorder.startRecording(currentSectionIndex);
+    }
+  };
+
+  const handleToggleVocalMute = () => {
+    const next = !vocalMuted;
+    setVocalMuted(next);
+    audioRecorder.setVocalMuted(next);
+  };
+
+  const handleVocalVolChange = (val: number) => {
+    setVocalVol(val);
+    audioRecorder.setVocalVolume(val);
+  };
+
+  const handleDeleteVocalTake = () => {
+    audioRecorder.deleteTake();
+  };
 
   // Quick section type template
   const [newSectionType, setNewSectionType] = useState<string>('Söz (Verse)');
@@ -296,6 +345,36 @@ export const StudioView: React.FC<StudioViewProps> = ({
               <Repeat className="w-3.5 h-3.5" />
               <span>{autoAdvanceSections ? 'ŞARKIYI SIRAYLA ÇAL' : 'KISIM DÖNGÜSÜ (LOOP)'}</span>
             </button>
+
+            {/* 🔴 VOKAL / MİKROFON KAYIT BUTONU */}
+            <button
+              onClick={handleToggleVocalRecord}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 border-2 transition-all active:scale-95 shadow-md ${
+                isRecordingVocal
+                  ? 'bg-red-600 text-white border-red-400 animate-pulse shadow-red-950/50'
+                  : 'bg-red-500/15 text-red-300 border-red-500/40 hover:bg-red-500/25'
+              }`}
+              title="Tarayıcı mikrofonuyla şarkı üzerine vokal veya enstrüman kaydet"
+            >
+              {isRecordingVocal ? <MicOff className="w-4 h-4 animate-bounce" /> : <Mic className="w-4 h-4" />}
+              <span>{isRecordingVocal ? 'KAYDI BİTİR' : '🔴 VOKAL KAYDET'}</span>
+            </button>
+
+            {/* Şarkı Sözleri Göster/Gizle */}
+            {lyrics && (
+              <button
+                onClick={() => setShowLyricsInStudio(!showLyricsInStudio)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${
+                  showLyricsInStudio
+                    ? 'bg-purple-600 text-white border-purple-400 shadow-purple-950/40'
+                    : 'bg-[#12131c] border-[#222534] text-purple-300 hover:text-white'
+                }`}
+                title="GrooveBox'ta yazılan sözleri timeline üzerinde aç/kapat"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>SÖZLER</span>
+              </button>
+            )}
 
             {/* Add Section dropdown & button */}
             <div className="flex items-center gap-1 bg-[#12141c] border border-[#222534] rounded-xl p-0.5">
@@ -581,7 +660,121 @@ export const StudioView: React.FC<StudioViewProps> = ({
             })}
           </div>
         </div>
+
+        {/* TRACK 4: VOKAL & MİKROFON SES KAYDI (VOCAL AUDIO TRACK) */}
+        <div className="grid grid-cols-[160px_1fr] sm:grid-cols-[200px_1fr] items-center bg-[#0e0f14] border border-[#20222e] rounded-lg p-1.5 gap-2">
+          {/* Track Header */}
+          <div className="flex items-center justify-between bg-[#14151e] border border-[#252838] rounded-lg p-1.5">
+            <div className="flex items-center gap-1.5 truncate">
+              <Mic className={`w-4 h-4 shrink-0 ${isRecordingVocal ? 'text-red-500 animate-pulse' : 'text-rose-400'}`} />
+              <div className="truncate">
+                <span className="text-xs font-bold text-white block truncate leading-none">Vokal / Mikrofon</span>
+                <span className="text-[9px] text-rose-400/80 font-mono">
+                  {isRecordingVocal ? '🔴 Kaydediliyor...' : vocalTake ? `${vocalTake.durationSec.toFixed(1)}s Kayıt` : 'Hazır'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {vocalTake && (
+                <>
+                  <button
+                    onClick={handleToggleVocalMute}
+                    className={`w-5 h-5 rounded text-[10px] font-bold border transition-colors ${
+                      vocalMuted
+                        ? 'bg-red-500 text-white border-red-400'
+                        : 'bg-[#1e202c] border-[#303448] text-neutral-400 hover:text-white'
+                    }`}
+                    title="Vokali Sustur (Mute)"
+                  >
+                    M
+                  </button>
+                  <button
+                    onClick={handleDeleteVocalTake}
+                    className="w-5 h-5 rounded text-[10px] bg-neutral-900 hover:bg-red-950 text-neutral-400 hover:text-red-400 border border-neutral-800 flex items-center justify-center transition-colors"
+                    title="Vokal Kaydını Sil"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </>
+              )}
+              <input
+                type="range"
+                min="0"
+                max="1.5"
+                step="0.05"
+                value={vocalVol}
+                onChange={(e) => handleVocalVolChange(parseFloat(e.target.value))}
+                className="w-10 accent-rose-500 h-1 bg-neutral-800 rounded cursor-pointer hidden sm:block"
+                title="Vokal Sesi"
+              />
+            </div>
+          </div>
+
+          {/* Track Lane: Vocal Audio Waveform / Take Representation */}
+          <div className="flex items-center gap-1.5 h-12 overflow-x-hidden">
+            {vocalTake ? (
+              <div className="w-full h-full bg-gradient-to-r from-rose-950/60 to-purple-950/40 border border-rose-500/50 rounded-lg p-2 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                  <span className="text-xs font-bold text-rose-200">
+                    🎤 Canlı Vokal Kaydı ({vocalTake.durationSec.toFixed(1)} sn)
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: 32 }).map((_, wIdx) => {
+                    const h = Math.sin(wIdx * 0.4) * 12 + 14;
+                    return (
+                      <span
+                        key={wIdx}
+                        style={{ height: `${h}px` }}
+                        className="w-1 bg-rose-400/70 rounded-full"
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : isRecordingVocal ? (
+              <div className="w-full h-full bg-red-950/40 border-2 border-red-500 border-dashed rounded-lg flex items-center justify-center gap-2 animate-pulse">
+                <span className="w-3 h-3 rounded-full bg-red-500" />
+                <span className="text-xs font-bold text-red-300">Mikrofondan Şarkı Kaydediliyor...</span>
+              </div>
+            ) : (
+              <div
+                onClick={handleToggleVocalRecord}
+                className="w-full h-full bg-[#10121a]/60 border border-dashed border-[#242738] hover:border-rose-500/50 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-all group"
+              >
+                <Mic className="w-4 h-4 text-neutral-500 group-hover:text-rose-400 transition-colors" />
+                <span className="text-xs text-neutral-400 group-hover:text-rose-300 font-medium">
+                  Vokal veya enstrüman kaydetmek için buraya veya üstteki 'Vokal Kaydet' butonuna tıklayın
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* 2.5 STÜDYO ENTEGRE SÖZ PANELİ */}
+      {showLyricsInStudio && lyrics && (
+        <div className="bg-[#0e0f14] border-2 border-purple-500/30 rounded-xl p-3 shadow-xl flex flex-col gap-2 shrink-0 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between border-b border-[#1c1e28] pb-1.5 text-xs">
+            <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+              <FileText className="w-4 h-4 text-purple-400" />
+              Şarkı Sözleri: {currentSection.name}
+            </span>
+            <span className="text-[10px] text-purple-300 font-mono">
+              GrooveBox Senkronize Sözler
+            </span>
+          </div>
+          <textarea
+            value={lyrics[currentSection.id] || ''}
+            onChange={(e) => onLyricsChange && onLyricsChange(currentSection.id, e.target.value)}
+            placeholder="Bu kısım için şarkı sözü yazın..."
+            rows={3}
+            className="w-full text-sm font-sans text-neutral-200 bg-neutral-950 p-2.5 rounded-lg border border-neutral-800 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 leading-relaxed resize-y"
+          />
+        </div>
+      )}
 
       {/* 3. CLIP & SECTION DETAIL INSPECTOR (Ableton / Studio One Bottom Drawer) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 shrink-0">

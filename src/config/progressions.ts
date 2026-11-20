@@ -100,6 +100,42 @@ export const SONG_PROGRESSIONS: SongProgression[] = [
 
   // GLOBAL EFSANELER
   {
+    id: 'indie-trap-pop',
+    title: 'Madrigal / Dolu Kadehi (Modern Indie Pop)',
+    artistHint: 'Madrigal, Dolu Kadehi Ters Tut, Köfn',
+    category: 'turkish',
+    scaleRoot: 'A',
+    scaleId: 'minor',
+    chords: ['Fmaj7', 'G', 'Em7', 'Am7'],
+    patternId: 'percussive-groove',
+    bpm: 102,
+    description: 'Son yıllarda Türkiye listelerini kasıp kavuran modern yumuşak synth/akustik indie yürüyüşü.'
+  },
+  {
+    id: 'turkce-pop-90lar',
+    title: '90lar Türkçe Pop Altın Çağı',
+    artistHint: 'Tarkan, Kenan Doğulu, Mustafa Sandal',
+    category: 'turkish',
+    scaleRoot: 'A',
+    scaleId: 'minor',
+    chords: ['Am', 'F', 'Dm', 'E7'],
+    patternId: 'percussive-groove',
+    bpm: 116,
+    description: '90ların enerjik, melodik ve akılda kalıcı hit pop şarkı matematiği.'
+  },
+  {
+    id: 'flamenco-andalusia',
+    title: 'Endülüs & Akdeniz Tutkusu',
+    artistHint: 'Gipsy Kings, Al Di Meola, Paco de Lucia',
+    category: 'global',
+    scaleRoot: 'A',
+    scaleId: 'minor',
+    chords: ['Am', 'G', 'F', 'E7'],
+    patternId: 'rumba-spanish',
+    bpm: 118,
+    description: 'Klasik Endülüs kadansı; i - VII - VI - V basamaklarıyla ateşi yükselten rumba ritmi.'
+  },
+  {
     id: 'wonderwall-style',
     title: 'Wonderwall (Oasis Style)',
     artistHint: 'Oasis, Britpop',
@@ -124,3 +160,12 @@ export const SONG_PROGRESSIONS: SongProgression[] = [
     description: 'Dünya pop listelerinin en çok dinlenen 4 akorlu şablonu.'
   }
 ];
+
+/**
+ * Müzik teorisini sıfırlayan akıllı hit akor üreticisi:
+ * Milyonlar satan hit formüllerinden birini rastgele seçer ve uygulanabilir hale getirir.
+ */
+export function generateRandomHitProgression(): SongProgression {
+  const randomIndex = Math.floor(Math.random() * SONG_PROGRESSIONS.length);
+  return SONG_PROGRESSIONS[randomIndex];
+}

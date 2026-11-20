@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header, AppViewMode } from './components/Header';
-import { ChordView } from './components/ChordView';
-import { LiveView } from './components/LiveView';
-import { HybridView } from './components/HybridView';
+import { GrooveBoxView } from './components/GrooveBoxView';
 import { StudioView } from './components/StudioView';
 import { MasterDspRack } from './components/MasterDspRack';
 import { SequencerBar } from './components/SequencerBar';
@@ -14,8 +12,8 @@ import { BodyPreset, GuitarChord, SongSection } from './types';
 import { AcousticInstrumentType } from './audio/SampledGuitarEngine';
 
 export const App: React.FC = () => {
-  // Live Modu is the active default performance experience!
-  const [viewMode, setViewMode] = useState<AppViewMode>('live');
+  // Sadece 2 Saf Mod: GrooveBox (Mod 1) ve Stüdyo (Mod 2)
+  const [viewMode, setViewMode] = useState<AppViewMode>('groovebox');
 
   // Sequencer & Playback State
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -27,7 +25,7 @@ export const App: React.FC = () => {
   // Organic Rhythm (Cajon, Shaker, Tambourine)
   const [percussionOn, setPercussionOn] = useState<boolean>(true);
 
-  // Chord Instrument (Nylon / Steel / Violin / Clarinet etc.)
+  // Chord Instrument (Nylon / Steel / Piano)
   const [chordInstrument, setChordInstrument] = useState<AcousticInstrumentType>('nylon');
 
   // Musical Scale & Solo System
@@ -46,12 +44,17 @@ export const App: React.FC = () => {
   const [activeChord, setActiveChord] = useState<GuitarChord>(GUITAR_CHORDS['Am']);
   const [currentPreset, setCurrentPreset] = useState<BodyPreset>(GUITAR_PRESETS[0]);
 
-  // Visual string plucks
-  const [activeStringPluck, setActiveStringPluck] = useState<{
-    stringIndex: number;
-    fret: number;
-    id: number;
-  } | null>(null);
+  // Beste & Şarkı Sözleri (Lyrics Pad State)
+  const [lyrics, setLyrics] = useState<Record<string, string>>({
+    intro: '',
+    verse: 'Yollarda bulurum seni...\nBir şarkı fısıldar gibi rüzgar.',
+    chorus: 'Dön bana, dön bana yeniden...\nSensiz geçen günlerin acısı bitmiyor.',
+    solo: ''
+  });
+
+  const handleLyricsChange = (sectionId: string, text: string) => {
+    setLyrics((prev) => ({ ...prev, [sectionId]: text }));
+  };
 
   // Initialize Sequencer listeners
   useEffect(() => {
@@ -77,8 +80,8 @@ export const App: React.FC = () => {
       }
     });
 
-    const unsubscribePluck = songSequencer.onStringPluck((stringIndex, fret) => {
-      setActiveStringPluck({ stringIndex, fret, id: Date.now() + Math.random() });
+    const unsubscribePluck = songSequencer.onStringPluck((_stringIndex, _fret) => {
+      // String pluck visual event listener
     });
 
     return () => {
@@ -161,20 +164,6 @@ export const App: React.FC = () => {
     audioEngine.applyPreset(preset);
   };
 
-  const handleApplyRecommendedChords = (newChords: string[]) => {
-    audioEngine.unlock();
-    const next = [...sections];
-    next[currentSectionIndex] = {
-      ...sections[currentSectionIndex],
-      chords: newChords
-    };
-    handleUpdateSections(next);
-
-    if (newChords.length > 0 && GUITAR_CHORDS[newChords[0]]) {
-      setActiveChord(GUITAR_CHORDS[newChords[0]]);
-    }
-  };
-
   const handleReset = () => {
     songSequencer.stop();
     setIsPlaying(false);
@@ -225,64 +214,28 @@ export const App: React.FC = () => {
         onTogglePercussion={handleTogglePercussion}
       />
 
-      {/* 2. MAIN WORKSPACE (Akor Modu, Live Modu, Hibrit Mod, Stüdyo Modu) */}
+      {/* 2. MAIN WORKSPACE (Mod 1: GrooveBox & Mod 2: Stüdyo) */}
       <main className="flex-1 overflow-hidden p-2 sm:p-2.5 flex flex-col justify-between gap-2 min-h-0">
-        <div className="flex-1 min-h-0 overflow-hidden">
-          {viewMode === 'akor' ? (
-            <ChordView
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+          {viewMode === 'groovebox' ? (
+            <GrooveBoxView
               sections={sections}
               currentSectionIndex={currentSectionIndex}
+              queuedSectionIndex={queuedSectionIndex}
+              currentChordIndex={currentChordIndex}
+              currentRepeat={currentRepeat}
+              activeChord={activeChord}
+              onSelectChord={setActiveChord}
+              currentRoot={currentRoot}
+              onRootChange={setCurrentRoot}
+              currentScaleId={currentScaleId}
+              onScaleChange={setCurrentScaleId}
+              isPlaying={isPlaying}
+              percussionOn={percussionOn}
+              onTogglePercussion={handleTogglePercussion}
               onUpdateSections={handleUpdateSections}
-              activeChord={activeChord}
-              onSelectChord={setActiveChord}
-              currentRoot={currentRoot}
-              onRootChange={setCurrentRoot}
-              currentScaleId={currentScaleId}
-              onScaleChange={setCurrentScaleId}
-              activeStringPluck={activeStringPluck}
-              onPluckNote={(stringIndex: number, fret: number) => {
-                setActiveStringPluck({
-                  stringIndex,
-                  fret,
-                  id: Date.now() + Math.random()
-                });
-              }}
-            />
-          ) : viewMode === 'live' ? (
-            <LiveView
-              sections={sections}
-              currentSectionIndex={currentSectionIndex}
-              queuedSectionIndex={queuedSectionIndex}
-              currentChordIndex={currentChordIndex}
-              currentRepeat={currentRepeat}
-              activeChord={activeChord}
-              onSelectChord={setActiveChord}
-              currentRoot={currentRoot}
-              onRootChange={setCurrentRoot}
-              currentScaleId={currentScaleId}
-              onScaleChange={setCurrentScaleId}
-              onApplyRecommendedChords={handleApplyRecommendedChords}
-              isPlaying={isPlaying}
-              percussionOn={percussionOn}
-              onTogglePercussion={handleTogglePercussion}
-            />
-          ) : viewMode === 'hybrid' ? (
-            <HybridView
-              sections={sections}
-              currentSectionIndex={currentSectionIndex}
-              queuedSectionIndex={queuedSectionIndex}
-              currentChordIndex={currentChordIndex}
-              currentRepeat={currentRepeat}
-              activeChord={activeChord}
-              onSelectChord={setActiveChord}
-              currentRoot={currentRoot}
-              onRootChange={setCurrentRoot}
-              currentScaleId={currentScaleId}
-              onScaleChange={setCurrentScaleId}
-              onApplyRecommendedChords={handleApplyRecommendedChords}
-              isPlaying={isPlaying}
-              percussionOn={percussionOn}
-              onTogglePercussion={handleTogglePercussion}
+              lyrics={lyrics}
+              onLyricsChange={handleLyricsChange}
             />
           ) : (
             <StudioView
@@ -300,6 +253,8 @@ export const App: React.FC = () => {
               onTogglePlay={handleTogglePlay}
               bpm={bpm}
               currentRepeat={currentRepeat}
+              lyrics={lyrics}
+              onLyricsChange={handleLyricsChange}
             />
           )}
         </div>
