@@ -325,17 +325,18 @@ export class SampledGuitarEngine {
 
     if (isMuted) {
       gainNode.gain.setTargetAtTime(0.0001, now + env.attackSec, 0.035);
-      source.stop(now + 0.16);
     } else {
       // Natural chord sustain across full measure
       gainNode.gain.setTargetAtTime(0.0001, now + env.attackSec, env.decaySec * 1.5);
-      source.stop(now + env.maxHoldSec);
     }
 
     source.connect(dynamicFilter);
     dynamicFilter.connect(gainNode);
     gainNode.connect(destination);
+
+    // AudioScheduledSourceNode rule: start MUST be called before stop!
     source.start(now);
+    source.stop(now + (isMuted ? 0.16 : env.maxHoldSec));
 
     return true;
   }
