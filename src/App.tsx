@@ -48,6 +48,9 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  const [drawer, setDrawer] = useState<"project" | "presets" | "lyrics" | null>(
+    null,
+  );
   const [undoIdea, setUndoIdea] = useState<{
     project: SongProject;
     selected: number;
@@ -123,6 +126,8 @@ export default function App() {
     songSequencer.setPercussionEnabled(project.percussionOn);
     songSequencer.setGuitarMuted(project.mix.guitarMuted);
     songSequencer.setSoloMuted(project.mix.soloMuted);
+    songSequencer.setMetronome(project.metronomeOn ?? false);
+    songSequencer.setCountIn(project.countInBars ?? 0);
   }, [
     project.mix,
     project.volume,
@@ -132,6 +137,8 @@ export default function App() {
     project.swing,
     project.autoAdvance,
     project.percussionOn,
+    project.metronomeOn,
+    project.countInBars,
   ]);
 
   useEffect(() => {
@@ -357,7 +364,7 @@ export default function App() {
     );
 
   return (
-    <div className="songwriter-app">
+    <div className="songwriter-app" data-mode={mode}>
       <Header
         mode={mode}
         onModeChange={setMode}
@@ -369,93 +376,113 @@ export default function App() {
         recording={recording}
       />
       <main className="workspace">
-        <section
-          className="project-bar panel"
-          aria-label="Proje ve global müzik ayarları"
+        <details
+          className="project-drawer"
+          open={mode === "studio" || drawer === "project"}
         >
-          <label className="project-name">
-            <span className="eyebrow">PROJE</span>
-            <input
-              aria-label="Proje adı"
-              maxLength={120}
-              value={project.name}
-              onChange={(e) =>
-                update({ name: e.target.value || "Adsız beste" })
+          <summary
+            onClick={(e) => {
+              if (mode === "groovebox") {
+                e.preventDefault();
+                setDrawer(drawer === "project" ? null : "project");
               }
-            />
-            <span className="save-status" role="status">
-              <Save size={12} />
-              {saveStatus}
+            }}
+          >
+            {project.name}
+            <span>
+              {project.bpm} BPM · {project.root} · PROJE / DOSYALAR
             </span>
-          </label>
-          <div className="control-row global-controls">
-            <details className="global-harmony">
-              <summary>Ton / gam · isteğe bağlı</summary>
-              <div className="control-row">
-                <label>
-                  Global ton
-                  <select
-                    aria-label="Global ton"
-                    value={project.root}
-                    onChange={(e) => changeKey(e.target.value, project.scaleId)}
-                  >
-                    {ROOT_NOTES.map((root) => (
-                      <option key={root}>{root}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Global gam
-                  <select
-                    aria-label="Global gam"
-                    value={project.scaleId}
-                    onChange={(e) => changeKey(project.root, e.target.value)}
-                  >
-                    {Object.values(MUSICAL_SCALES).map((scale) => (
-                      <option key={scale.id} value={scale.id}>
-                        {scale.name.split(" (")[0]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </details>
-            <label>
-              Tempo
+          </summary>
+          <section
+            className="project-bar panel"
+            aria-label="Proje ve global müzik ayarları"
+          >
+            <label className="project-name">
+              <span className="eyebrow">PROJE</span>
               <input
-                aria-label="Tempo BPM"
-                type="number"
-                min={40}
-                max={220}
-                value={project.bpm}
-                onChange={(e) => {
-                  const value = +e.target.value;
-                  if (value >= 40 && value <= 220) update({ bpm: value });
-                }}
+                aria-label="Proje adı"
+                maxLength={120}
+                value={project.name}
+                onChange={(e) =>
+                  update({ name: e.target.value || "Adsız beste" })
+                }
               />
+              <span className="save-status" role="status">
+                <Save size={12} />
+                {saveStatus}
+              </span>
             </label>
-          </div>
-          <div className="control-row project-actions">
-            <input
-              className="sr-only"
-              ref={importInput}
-              type="file"
-              accept=".json,application/json"
-              onChange={(e) => void importProject(e.target.files?.[0])}
-            />
-            <button
-              className="button"
-              onClick={() => importInput.current?.click()}
-            >
-              <FolderOpen size={16} />
-              Proje aç
-            </button>
-            <button className="button" onClick={exportProject}>
-              <Download size={16} />
-              Proje indir
-            </button>
-          </div>
-        </section>
+            <div className="control-row global-controls">
+              <details className="global-harmony">
+                <summary>Ton / gam · isteğe bağlı</summary>
+                <div className="control-row">
+                  <label>
+                    Global ton
+                    <select
+                      aria-label="Global ton"
+                      value={project.root}
+                      onChange={(e) =>
+                        changeKey(e.target.value, project.scaleId)
+                      }
+                    >
+                      {ROOT_NOTES.map((root) => (
+                        <option key={root}>{root}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Global gam
+                    <select
+                      aria-label="Global gam"
+                      value={project.scaleId}
+                      onChange={(e) => changeKey(project.root, e.target.value)}
+                    >
+                      {Object.values(MUSICAL_SCALES).map((scale) => (
+                        <option key={scale.id} value={scale.id}>
+                          {scale.name.split(" (")[0]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </details>
+              <label>
+                Tempo
+                <input
+                  aria-label="Tempo BPM"
+                  type="number"
+                  min={40}
+                  max={220}
+                  value={project.bpm}
+                  onChange={(e) => {
+                    const value = +e.target.value;
+                    if (value >= 40 && value <= 220) update({ bpm: value });
+                  }}
+                />
+              </label>
+            </div>
+            <div className="control-row project-actions">
+              <input
+                className="sr-only"
+                ref={importInput}
+                type="file"
+                accept=".json,application/json"
+                onChange={(e) => void importProject(e.target.files?.[0])}
+              />
+              <button
+                className="button"
+                onClick={() => importInput.current?.click()}
+              >
+                <FolderOpen size={16} />
+                Proje aç
+              </button>
+              <button className="button" onClick={exportProject}>
+                <Download size={16} />
+                Proje indir
+              </button>
+            </div>
+          </section>
+        </details>
         <p className="global-note">
           Ton ve gam bütün kısımlar için ortaktır. Değişiklik akorları ve
           kayıtlı melodiyi birlikte uyarlar.
@@ -505,18 +532,6 @@ export default function App() {
           </div>
         </div>
         {mode === "groovebox" && (
-          <SongIdeaPanel
-            root={project.root}
-            onApply={applyIdea}
-            canUndo={!!undoIdea}
-            onUndo={() => {
-              if (undoIdea) restoreProject(undoIdea.project, undoIdea.selected);
-              setUndoIdea(null);
-              setMessage("Son preset değişikliği geri alındı.");
-            }}
-          />
-        )}
-        {mode === "groovebox" && (
           <GrooveboxView
             project={project}
             state={transport}
@@ -527,7 +542,36 @@ export default function App() {
             onUpdate={update}
             onPreviewChord={setPreviewChord}
             onChangeKey={changeKey}
+            onMixChange={changeMix}
+            onTogglePlay={() => void togglePlay()}
+            busy={busy}
+            onOpenPanel={(panel) =>
+              setDrawer((current) => (current === panel ? null : panel))
+            }
           />
+        )}
+        {mode === "groovebox" && (
+          <details className="console-drawer" open={drawer === "presets"}>
+            <summary
+              onClick={(e) => {
+                e.preventDefault();
+                setDrawer(drawer === "presets" ? null : "presets");
+              }}
+            >
+              PRESET KÜTÜPHANESİ
+            </summary>
+            <SongIdeaPanel
+              root={project.root}
+              onApply={applyIdea}
+              canUndo={!!undoIdea}
+              onUndo={() => {
+                if (undoIdea)
+                  restoreProject(undoIdea.project, undoIdea.selected);
+                setUndoIdea(null);
+                setMessage("Son preset değişikliği geri alındı.");
+              }}
+            />
+          </details>
         )}
         <div hidden={mode !== "studio"} className="studio-space">
           {mode === "studio" && (
@@ -558,26 +602,43 @@ export default function App() {
             onChange={(audioTrack) => update({ audioTrack })}
           />
         </div>
-        <LyricsPanel
-          section={section}
-          onChange={(lyrics) => {
-            setUndoIdea(null);
-            setProject((p) => ({
-              ...p,
-              sections: p.sections.map((s) =>
-                s.id === section.id ? { ...s, lyrics } : s,
-              ),
-            }));
-          }}
-        />
-        <Mixer
-          mix={project.mix}
-          onChange={changeMix}
-          percussionOn={project.percussionOn}
-          onPercussionChange={(percussionOn) => update({ percussionOn })}
-          swing={project.swing}
-          onSwingChange={(swing) => update({ swing })}
-        />
+        <details
+          className="console-drawer lyrics-drawer"
+          open={mode === "studio" || drawer === "lyrics"}
+        >
+          <summary
+            onClick={(e) => {
+              if (mode === "groovebox") {
+                e.preventDefault();
+                setDrawer(drawer === "lyrics" ? null : "lyrics");
+              }
+            }}
+          >
+            SÖZ DEFTERİ · {section.name}
+          </summary>
+          <LyricsPanel
+            section={section}
+            onChange={(lyrics) => {
+              setUndoIdea(null);
+              setProject((p) => ({
+                ...p,
+                sections: p.sections.map((s) =>
+                  s.id === section.id ? { ...s, lyrics } : s,
+                ),
+              }));
+            }}
+          />
+        </details>
+        <div hidden={mode === "groovebox"}>
+          <Mixer
+            mix={project.mix}
+            onChange={changeMix}
+            percussionOn={project.percussionOn}
+            onPercussionChange={(percussionOn) => update({ percussionOn })}
+            swing={project.swing}
+            onSwingChange={(swing) => update({ swing })}
+          />
+        </div>
         <footer className="workspace-footer">
           <span>
             SongWriter Pro · {project.sections.length} kısım ·{" "}

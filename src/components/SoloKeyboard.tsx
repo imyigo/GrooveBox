@@ -14,6 +14,10 @@ import {
   INSTRUMENT_METAS,
 } from "../audio/SampledGuitarEngine";
 import { GuitarChord, SoloHarmonyMode } from "../types";
+import { SongSection } from "../types";
+import { HardwarePads } from "./HardwarePads";
+import type { SequencerState } from "../audio/Sequencer";
+import { MidiInput } from "./MidiInput";
 
 interface Props {
   currentRoot: string;
@@ -26,6 +30,10 @@ interface Props {
   onHarmonyChange?: (mode: SoloHarmonyMode) => void;
   sectionId?: string;
   sectionName?: string;
+  hardware?: boolean;
+  section?: SongSection;
+  state?: SequencerState;
+  velocity?: number;
   onRootChange?: (root: string) => void;
   onScaleChange?: (scale: string) => void;
   onApplyRecommendedChords?: (chords: string[]) => void;
@@ -107,6 +115,10 @@ export function SoloKeyboard({
   onHarmonyChange,
   sectionId,
   sectionName,
+  hardware = false,
+  section,
+  state,
+  velocity = 0.9,
 }: Props) {
   const [octave, setOctave] = useState(0);
   const [layout, setLayout] = useState<"pads" | "keyboard">("pads");
@@ -188,7 +200,7 @@ export function SoloKeyboard({
     };
   }, []);
   const trigger = useCallback(
-    async (midi: number, key: string) => {
+    async (midi: number, key: string, velocityOverride?: number) => {
       if (held.current.has(key)) return;
       let finalMidi =
         instrument === "drums"
@@ -210,18 +222,29 @@ export function SoloKeyboard({
       }
       held.current.set(key, finalMidi);
       updatePressed();
-      await audioEngine.unlock();
-      await audioEngine.ready();
+      try {
+        await audioEngine.unlock();
+        await audioEngine.ready();
+      } catch {
+        held.current.delete(key);
+        updatePressed();
+        setError("Ses yüklenemedi. Tekrar deneyin.");
+        return;
+      }
       if (!mounted.current || !held.current.has(key)) return;
       audioEngine.playSoloMidiNote(
         finalMidi,
         undefined,
-        0.9,
+        velocityOverride ?? velocity,
         harmony === "smart-lick" && instrument !== "drums",
       );
-      songSequencer.addSoloNote(finalMidi, 0.9, harmony);
+      songSequencer.addSoloNote(
+        finalMidi,
+        velocityOverride ?? velocity,
+        harmony,
+      );
     },
-    [activeChord, harmony, instrument, currentRoot, currentScaleId],
+    [activeChord, harmony, instrument, currentRoot, currentScaleId, velocity],
   );
   const release = useCallback(
     (key: string) => {
@@ -300,6 +323,103 @@ export function SoloKeyboard({
     instrument,
     toggleRecording,
   ]);
+  if (hardware && section && state)
+    return (
+      <section
+        className="console-performance"
+        aria-label="Groovebox performansı"
+      >
+        <div className="console-voice-controls">
+          <label>
+            <span>SOLO</span>
+            <select
+              aria-label="Solo enstrümanı"
+              value={instrument}
+              onChange={(e) => {
+                held.current.forEach((_, key) => release(key));
+                const type = e.target.value as AcousticInstrumentType;
+                if ((type === "drums") !== isDrums) {
+                  songSequencer.setIsRecordingSolo(false);
+                  setRecording(false);
+                }
+                audioEngine.setSoloInstrument(type);
+                onInstrumentChange?.(type);
+              }}
+            >
+              {Object.values(INSTRUMENT_METAS).map((meta) => (
+                <option key={meta.id} value={meta.id}>
+                  {meta.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>NOTA YARDIMI</span>
+            <select
+              aria-label="Nota yardımı"
+              value={harmony}
+              onChange={(e) =>
+                onHarmonyChange?.(e.target.value as SoloHarmonyMode)
+              }
+            >
+              <option value="chord-tones">Akorla uyumlu</option>
+              <option value="free-scale">Gamda serbest</option>
+              <option value="chromatic">Tam serbest · 12 ses</option>
+              <option value="pentatonic">Pentatonik</option>
+              <option value="smart-lick">Akor + süsleme</option>
+            </select>
+          </label>
+          <button
+            className={`console-record ${recording ? "armed" : ""}`}
+            aria-pressed={recording}
+            onClick={() => void toggleRecording()}
+          >
+            <Circle size={12} />
+            {recording
+              ? `${trackName} kaydını bitir`
+              : `${trackName} döngüsü kaydet`}
+          </button>
+          <button
+            className="console-clear"
+            aria-label={`${trackName} notalarını temizle`}
+            disabled={!trackNotes.length}
+            onClick={() =>
+              songSequencer.clearSolo({
+                sectionId,
+                track: isDrums ? "drums" : "solo",
+              })
+            }
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+        <MidiInput
+          onPress={(midi, key, midiVelocity) =>
+            trigger(midi, key, Math.max(0.05, midiVelocity * velocity))
+          }
+          onRelease={release}
+        />
+        <HardwarePads
+          root={currentRoot}
+          scaleId={currentScaleId}
+          harmony={harmony}
+          instrument={instrument}
+          octave={octave}
+          onOctaveChange={setOctave}
+          section={section}
+          state={state}
+          notes={songSequencer.getRecordedNotes()}
+          held={[...held.current.values()]}
+          onPress={trigger}
+          onRelease={release}
+        />
+        {error && (
+          <p className="error-message" role="alert">
+            {error}
+          </p>
+        )}
+      </section>
+    );
   return (
     <section className="panel solo-panel">
       <div className="section-heading">

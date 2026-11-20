@@ -16,6 +16,23 @@ export class AudioEngine {
   private isUnlocked: boolean = false;
   private desiredMix: MixSettings | null = null;
   private desiredVolume = 0.85;
+  private clickGain: GainNode | null = null;
+
+  public playMetronome(time: number, accent: boolean): void {
+    const ctx = this.getContext();
+    const source = trackVoice(ctx.createOscillator());
+    const gain = ctx.createGain();
+    source.type = "sine";
+    source.frequency.value = accent ? 1400 : 950;
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.linearRampToValueAtTime(0.65, time + 0.001);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.045);
+    source.connect(gain);
+    gain.connect(this.clickGain!);
+    source.addEventListener("ended", () => gain.disconnect(), { once: true });
+    source.start(time);
+    source.stop(time + 0.05);
+  }
   private wavTrack?: WavTrack;
   private wavBuffer: AudioBuffer | null = null;
   private wavGain: GainNode | null = null;
@@ -214,6 +231,9 @@ export class AudioEngine {
 
     this.limiter.connect(this.masterGain);
     this.masterGain.connect(ctx.destination);
+    this.clickGain = ctx.createGain();
+    this.clickGain.gain.value = this.desiredVolume * 0.12;
+    this.clickGain.connect(ctx.destination); // Monitor-only: exclude the click from the recording bus.
     this.wavGain = ctx.createGain();
     this.wavGain.gain.value =
       this.wavTrack && !this.wavTrack.muted ? this.wavTrack.volume : 0;
@@ -514,6 +534,11 @@ export class AudioEngine {
     if (!this.masterGain || !this.ctx) return;
     const clamped = Math.max(0, Math.min(1.2, volume));
     this.masterGain.gain.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+    this.clickGain?.gain.setTargetAtTime(
+      clamped * 0.12,
+      this.ctx.currentTime,
+      0.02,
+    );
   }
 
   public applyPreset(preset: BodyPreset): void {

@@ -12,6 +12,7 @@ export interface RecordedSoloNote {
   sectionId?: string;
   instrument?: AcousticInstrumentType;
   harmonyMode?: SoloHarmonyMode;
+  gridLane?: number;
   barIndex: number; // bar index in current section
   step: number; // 0 to 15
   velocity: number;
@@ -33,6 +34,7 @@ export interface SequencerState {
   isSoloMuted: boolean;
   isRecording: boolean;
   recordingTrack: "solo" | "drums";
+  countInBeat: number | null;
 }
 
 export const DEFAULT_SONG_SECTIONS: SongSection[] = [
@@ -106,6 +108,17 @@ export class SongSequencer {
   private currentStep: number = 0; // 0 to 15
   private currentChordIndex: number = 0;
   private backingSeekNeeded = true;
+  private metronomeOn = false;
+  private countInBars = 0;
+  private countInUntil = 0;
+  private lastCountBeat = -1;
+
+  public setMetronome(enabled: boolean): void {
+    this.metronomeOn = enabled;
+  }
+  public setCountIn(bars: 0 | 1): void {
+    this.countInBars = bars;
+  }
 
   // Listeners
   private generation = 0;
@@ -161,6 +174,17 @@ export class SongSequencer {
     this.currentChordIndex = 0;
     this.currentRepeat = 0;
     this.nextStepTime = ctx.currentTime + 0.05;
+    this.countInUntil = 0;
+    this.lastCountBeat = -1;
+    if (this.countInBars) {
+      for (let beat = 0; beat < 4; beat++)
+        audioEngine.playMetronome(
+          this.nextStepTime + (beat * 60) / this.bpm,
+          beat === 0,
+        );
+      this.nextStepTime += 240 / this.bpm;
+      this.countInUntil = this.nextStepTime;
+    }
     this.backingSeekNeeded = true;
     this.audiblePosition = {
       sectionIndex: this.currentSectionIndex,
@@ -180,6 +204,7 @@ export class SongSequencer {
   }
 
   public stop(): void {
+    this.countInUntil = 0;
     if (this.isRunning) {
       const audibleSection = this.sections.findIndex(
         (section) => section.id === this.audiblePosition.sectionId,
@@ -377,6 +402,11 @@ export class SongSequencer {
     )
       return;
     if (
+      this.countInUntil &&
+      audioEngine.getContext().currentTime < this.countInUntil
+    )
+      return;
+    if (
       (audioEngine.getSoloInstrument() === "drums" ? "drums" : "solo") !==
       this.recordingTrack
     )
@@ -442,6 +472,20 @@ export class SongSequencer {
   private scheduler(): void {
     if (!this.isRunning) return;
     const ctx = audioEngine.getContext();
+    if (this.countInUntil && ctx.currentTime < this.countInUntil) {
+      const beat = Math.max(
+        0,
+        Math.min(
+          3,
+          4 -
+            Math.ceil((this.countInUntil - ctx.currentTime) / (60 / this.bpm)),
+        ),
+      );
+      if (beat !== this.lastCountBeat) {
+        this.lastCountBeat = beat;
+        this.notifyStep(null);
+      }
+    }
 
     // Context check: If context is suspended or closed, do not schedule past timestamps
     if (ctx.state !== "running") {
@@ -472,6 +516,8 @@ export class SongSequencer {
     step: number,
     time: number,
   ): void {
+    if (this.metronomeOn && step % 4 === 0)
+      audioEngine.playMetronome(time, step === 0);
     if (this.backingSeekNeeded) {
       const precedingBars = this.sections
         .slice(0, sectionIdx)
@@ -620,6 +666,7 @@ export class SongSequencer {
             ...snapshot,
             isRecording: this.isRecordingSolo,
             recordingTrack: this.recordingTrack,
+            countInBeat: this.getState().countInBeat,
           }),
         );
       }
@@ -707,6 +754,20 @@ export class SongSequencer {
       isSoloMuted: this.isSoloMuted,
       isRecording: this.isRecordingSolo,
       recordingTrack: this.recordingTrack,
+      countInBeat:
+        this.isRunning &&
+        this.countInUntil &&
+        audioEngine.getContext().currentTime < this.countInUntil
+          ? Math.max(
+              1,
+              4 -
+                Math.ceil(
+                  (this.countInUntil - audioEngine.getContext().currentTime) /
+                    (60 / this.bpm),
+                ) +
+                1,
+            )
+          : null,
     };
   }
 

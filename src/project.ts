@@ -30,6 +30,9 @@ export interface SongProject {
   riffInstrument: AcousticInstrumentType;
   soloInstrument: AcousticInstrumentType;
   soloMode?: SoloHarmonyMode;
+  padVelocity?: number;
+  metronomeOn?: boolean;
+  countInBars?: 0 | 1;
   percussionOn: boolean;
   autoAdvance: boolean;
   sections: SongSection[];
@@ -60,6 +63,9 @@ export function createProject(): SongProject {
     riffInstrument: "nylon",
     soloInstrument: "violin",
     soloMode: "chord-tones",
+    padVelocity: 0.9,
+    metronomeOn: false,
+    countInBars: 0,
     percussionOn: true,
     autoAdvance: true,
     sections: DEFAULT_SONG_SECTIONS.map((s) => ({
@@ -106,6 +112,11 @@ export function parseProject(json: string): SongProject {
     !instrument(p.riffInstrument) ||
     !member(p.riffInstrument, ["nylon", "steel", "piano"]) ||
     !instrument(p.soloInstrument) ||
+    (p.padVelocity !== undefined && !number(p.padVelocity, 0.1, 1)) ||
+    (p.metronomeOn !== undefined && typeof p.metronomeOn !== "boolean") ||
+    (p.countInBars !== undefined &&
+      p.countInBars !== 0 &&
+      p.countInBars !== 1) ||
     (p.soloMode !== undefined &&
       !member(p.soloMode, [
         "chord-tones",
@@ -174,6 +185,8 @@ export function parseProject(json: string): SongProject {
       !instrument(n.instrument) ||
       !number(n.sectionIndex, 0, 63) ||
       !Number.isInteger(n.sectionIndex) ||
+      (n.gridLane !== undefined &&
+        (!number(n.gridLane, 0, 7) || !Number.isInteger(n.gridLane))) ||
       (n.harmonyMode !== undefined &&
         !member(n.harmonyMode, [
           "chord-tones",

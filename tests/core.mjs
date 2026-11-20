@@ -22,6 +22,52 @@ try {
   const { strumEngine } = await vite.ssrLoadModule("/src/audio/StrumEngine.ts");
   const { SONG_STYLES, ideaChords, ideaSections, parseChordSequence } =
     await vite.ssrLoadModule("/src/config/songIdeas.ts");
+  const { padGrid } = await vite.ssrLoadModule("/src/config/padGrid.ts");
+  const { parseMidi } = await vite.ssrLoadModule("/src/audio/midi.ts");
+  for (const root of ROOT_NOTES)
+    for (const scale of Object.values(MUSICAL_SCALES))
+      for (const chromatic of [false, true]) {
+        const pads = padGrid(root, scale.id, 0, chromatic);
+        assert.equal(pads.length, 64);
+        assert.ok(pads.every((p) => p.midi >= 0 && p.midi <= 127));
+        assert.equal(pads[59].midi, pads[48].midi);
+        if (!chromatic)
+          assert.ok(
+            pads.every((p) =>
+              scale.intervals
+                .map((n) => (n + noteSemitone(root)) % 12)
+                .includes(p.midi % 12),
+            ),
+          );
+        checks++;
+      }
+  assert.deepEqual(parseMidi([0x92, 60, 127]), {
+    type: "on",
+    note: 60,
+    velocity: 1,
+  });
+  assert.deepEqual(parseMidi([0x90, 60, 0]), {
+    type: "off",
+    note: 60,
+    velocity: 0,
+  });
+  assert.deepEqual(parseMidi([0x81, 60, 60]), {
+    type: "off",
+    note: 60,
+    velocity: 0,
+  });
+  assert.deepEqual(parseMidi([0xb0, 64, 127]), { type: "sustain", down: true });
+  assert.deepEqual(parseMidi([0xb0, 64, 0]), { type: "sustain", down: false });
+  assert.deepEqual(parseMidi([0xb0, 123, 0]), { type: "panic" });
+  for (const data of [
+    [],
+    [0x90, 60],
+    [0x90, 128, 100],
+    [0x90, 60, -1],
+    [0xf8, 0, 0],
+  ])
+    assert.equal(parseMidi(data), null);
+  checks++;
   for (const style of SONG_STYLES)
     for (const root of ROOT_NOTES)
       for (let variant = 0; variant < 8; variant++) {
@@ -107,6 +153,9 @@ try {
     (p) => (p.sections[0].repeats = 2.5),
     (p) => (p.sections[0].lyrics = 42),
     (p) => (p.soloMode = "unknown"),
+    (p) => (p.padVelocity = 2),
+    (p) => (p.metronomeOn = "yes"),
+    (p) => (p.countInBars = 2),
   ]) {
     const invalid = structuredClone(project);
     mutate(invalid);
@@ -142,6 +191,8 @@ try {
     state: "running",
   };
   const played = [];
+  const clicks = [];
+  audioEngine.playMetronome = (...args) => clicks.push(args);
   audioEngine.unlock = async () => true;
   audioEngine.ready = async () => {};
   audioEngine.getContext = () => ctx;
@@ -299,6 +350,30 @@ try {
     );
     checks++;
     layered.stop();
+    const counted = new SongSequencer();
+    counted.setSections([first]);
+    counted.setPercussionEnabled(false);
+    counted.setBpm(120);
+    counted.setMetronome(true);
+    counted.setCountIn(1);
+    clicks.length = 0;
+    await counted.start();
+    assert.equal(clicks.length, 4, "pre-roll schedules exactly four beats");
+    assert.equal(counted.getState().countInBeat, 1);
+    counted.setIsRecordingSolo(true);
+    counted.addSoloNote(69);
+    assert.equal(
+      counted.getRecordedNotes().length,
+      0,
+      "pre-roll is not recorded as a song note",
+    );
+    tickTo(now + 2.1);
+    assert.equal(counted.getState().countInBeat, null);
+    counted.addSoloNote(69);
+    assert.equal(counted.getRecordedNotes().length, 1);
+    assert.ok(clicks.length > 4, "click continues on song beats");
+    counted.stop();
+    checks++;
   } finally {
     globalThis.setTimeout = originalTimeout;
     globalThis.clearTimeout = originalClearTimeout;

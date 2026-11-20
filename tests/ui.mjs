@@ -464,6 +464,7 @@ try {
   );
   checks++;
   await click(button("Son fikri geri al"));
+  await click(button("AKORLAR"));
   await inputText(find("Kendi akorlarım"), "Am Dm E7 Am");
   await click(button("Akorları uygula"));
   assert.deepEqual(songSequencer.getSections()[0].chords, [
