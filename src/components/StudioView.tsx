@@ -7,6 +7,7 @@ import { audioEngine } from '../audio/AudioEngine';
 import { songSequencer } from '../audio/Sequencer';
 import { strumEngine } from '../audio/StrumEngine';
 import { audioRecorder, RecordedVocalTake } from '../audio/AudioRecorderEngine';
+import { LogicSmartControls } from './LogicSmartControls';
 import {
   Play,
   Square,
@@ -84,6 +85,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const [vocalVol, setVocalVol] = useState<number>(0.95);
   const [vocalMuted, setVocalMuted] = useState<boolean>(false);
   const [showLyricsInStudio, setShowLyricsInStudio] = useState<boolean>(false);
+  const [showStudioSmartControls, setShowStudioSmartControls] = useState<boolean>(false);
 
   useEffect(() => {
     return audioRecorder.subscribe((take, isRec) => {
@@ -775,6 +777,13 @@ export const StudioView: React.FC<StudioViewProps> = ({
           />
         </div>
       )}
+
+      {/* 2.8 LOGIC PRO SMART CONTROLS (Studio Master Strip) */}
+      <LogicSmartControls
+        currentInstrument={audioEngine.getSoloInstrument()}
+        isOpen={showStudioSmartControls}
+        onToggle={() => setShowStudioSmartControls(!showStudioSmartControls)}
+      />
 
       {/* 3. CLIP & SECTION DETAIL INSPECTOR (Ableton / Studio One Bottom Drawer) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 shrink-0">

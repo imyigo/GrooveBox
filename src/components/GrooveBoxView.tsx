@@ -3,7 +3,9 @@ import { SongSection, GuitarChord } from '../types';
 import { SONG_PROGRESSIONS, generateRandomHitProgression } from '../config/progressions';
 import { GUITAR_CHORDS } from '../config/chords';
 import { SoloKeyboard } from './SoloKeyboard';
+import { LogicSmartControls } from './LogicSmartControls';
 import { songSequencer } from '../audio/Sequencer';
+import { audioEngine } from '../audio/AudioEngine';
 import {
   Dices,
   Play,
@@ -57,6 +59,7 @@ export const GrooveBoxView: React.FC<GrooveBoxViewProps> = ({
 }) => {
   const currentSection = sections[currentSectionIndex] || sections[0];
   const [showLyricsPad, setShowLyricsPad] = useState<boolean>(false);
+  const [showSmartControls, setShowSmartControls] = useState<boolean>(true);
   const [selectedProgressionId, setSelectedProgressionId] = useState<string>('');
 
   // Hit Preset Uygulama
@@ -337,6 +340,13 @@ export const GrooveBoxView: React.FC<GrooveBoxViewProps> = ({
           })}
         </div>
       </div>
+
+      {/* 4.5 LOGIC PRO SMART CONTROLS (Enstrümana Özel DSP Düğmeleri & Space Designer) */}
+      <LogicSmartControls
+        currentInstrument={audioEngine.getSoloInstrument()}
+        isOpen={showSmartControls}
+        onToggle={() => setShowSmartControls(!showSmartControls)}
+      />
 
       {/* 5. VİRTUOSO SOLO ENSTRÜMAN KLAVYESİ & DAVUL MOTORU */}
       <SoloKeyboard

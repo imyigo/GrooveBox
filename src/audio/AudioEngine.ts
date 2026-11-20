@@ -336,6 +336,41 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * Logic Pro Warmth (Vintage Tube / Body Wood Resonance)
+   */
+  public setWarmth(val: number): void {
+    if (this.ctx && this.bodyEqLow) {
+      const db = (Math.max(0, Math.min(1, val)) - 0.5) * 10;
+      this.bodyEqLow.gain.setTargetAtTime(db, this.ctx.currentTime, 0.05);
+    }
+  }
+
+  /**
+   * Logic Pro Air Sheen (12kHz High-End Sparkle)
+   */
+  public setAirPresence(val: number): void {
+    if (this.ctx && this.bodyEqHigh) {
+      const db = (Math.max(0, Math.min(1, val)) - 0.5) * 12;
+      this.bodyEqHigh.gain.setTargetAtTime(db, this.ctx.currentTime, 0.05);
+    }
+  }
+
+  /**
+   * Logic Pro Space Designer Reverb Presets
+   */
+  public setSpaceDesigner(preset: 'dry-room' | 'warm-chamber' | 'concert-hall' | 'plate'): void {
+    if (!this.ctx || !this.reverbConvolver) return;
+    const sizeMap = {
+      'dry-room': { duration: 0.22, decay: 12.0, size: 'parlor' as const },
+      'warm-chamber': { duration: 0.45, decay: 7.5, size: 'dreadnought' as const },
+      'concert-hall': { duration: 0.85, decay: 5.0, size: 'jumbo' as const },
+      'plate': { duration: 0.55, decay: 6.0, size: 'dreadnought' as const }
+    };
+    const s = sizeMap[preset] || sizeMap['warm-chamber'];
+    this.reverbConvolver.buffer = createAcousticBodyImpulse(this.ctx, s.duration, s.decay, s.size);
+  }
+
   public setReverb(val: number): void {
     this.preset.reverbWet = Math.max(0, Math.min(0.8, val));
     if (this.ctx && this.reverbGain) {
