@@ -1,337 +1,478 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Header, AppViewMode } from './components/Header';
-import { ChordView } from './components/ChordView';
-import { LiveView } from './components/LiveView';
-import { HybridView } from './components/HybridView';
-import { StudioView } from './components/StudioView';
-import { MasterDspRack } from './components/MasterDspRack';
-import { SequencerBar } from './components/SequencerBar';
-import { GUITAR_CHORDS } from './config/chords';
-import { GUITAR_PRESETS } from './config/presets';
-import { songSequencer, SequencerState, DEFAULT_SONG_SECTIONS } from './audio/Sequencer';
-import { audioEngine } from './audio/AudioEngine';
-import { BodyPreset, GuitarChord, SongSection } from './types';
-import { AcousticInstrumentType } from './audio/SampledGuitarEngine';
+import { useEffect, useRef, useState } from "react";
+import { Download, FolderOpen, RotateCcw, Save } from "lucide-react";
+import { Header, AppViewMode } from "./components/Header";
+import { GrooveboxView } from "./components/GrooveboxView";
+import { StudioView } from "./components/StudioView";
+import { RecordingPanel } from "./components/RecordingPanel";
+import { WavTrackPanel } from "./components/WavTrackPanel";
+import { readSavedProject, saveProject } from "./projectStorage";
+import { Mixer } from "./components/Mixer";
+import { audioEngine } from "./audio/AudioEngine";
+import { sampledGuitarEngine } from "./audio/SampledGuitarEngine";
+import { songSequencer, SequencerState } from "./audio/Sequencer";
+import { GUITAR_CHORDS, noteSemitone } from "./config/chords";
+import { MUSICAL_SCALES, ROOT_NOTES } from "./config/scales";
+import { changeSongKey, mapMidiToKey } from "./config/harmony";
+import { SongSection } from "./types";
+import {
+  createProject,
+  parseProject,
+  SongProject,
+  STORAGE_KEY,
+  downloadBlob,
+  MixSettings,
+} from "./project";
 
-export const App: React.FC = () => {
-  // Live Modu is the active default performance experience!
-  const [viewMode, setViewMode] = useState<AppViewMode>('live');
+function loadProject(): SongProject {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return parseProject(saved);
+  } catch {
+    /* A damaged or unavailable cache must not prevent startup. */
+  }
+  return createProject();
+}
+export default function App() {
+  const [project, setProject] = useState<SongProject>(loadProject);
+  const [mode, setMode] = useState<AppViewMode>("groovebox");
+  const [transport, setTransport] = useState<SequencerState>(() =>
+    songSequencer.getState(),
+  );
+  const [selected, setSelected] = useState(0);
+  const [previewChord, setPreviewChord] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [message, setMessage] = useState("");
+  const [saveStatus, setSaveStatus] = useState("");
+  const [storageReady, setStorageReady] = useState(false);
+  const importInput = useRef<HTMLInputElement>(null);
+  const projectRef = useRef(project);
+  const busyRef = useRef(false);
+  projectRef.current = project;
 
-  // Sequencer & Playback State
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [bpm, setBpm] = useState<number>(104);
-  const [swing, setSwing] = useState<number>(0.0);
-  const [humanize] = useState<boolean>(true);
-  const [volume, setVolume] = useState<number>(0.85);
-
-  // Organic Rhythm (Cajon, Shaker, Tambourine)
-  const [percussionOn, setPercussionOn] = useState<boolean>(true);
-
-  // Chord Instrument (Nylon / Steel / Violin / Clarinet etc.)
-  const [chordInstrument, setChordInstrument] = useState<AcousticInstrumentType>('nylon');
-
-  // Musical Scale & Solo System
-  const [currentRoot, setCurrentRoot] = useState<string>('A');
-  const [currentScaleId, setCurrentScaleId] = useState<string>('minor');
-
-  // Song Sections & Scenes
-  const [sections, setSections] = useState<SongSection[]>(DEFAULT_SONG_SECTIONS);
-  const [currentSectionIndex, setCurrentSectionIndex] = useState<number>(0);
-  const [queuedSectionIndex, setQueuedSectionIndex] = useState<number | null>(null);
-  const [autoAdvanceSections, setAutoAdvanceSections] = useState<boolean>(true);
-  const [currentRepeat, setCurrentRepeat] = useState<number>(0);
-
-  // Active Chord & Preset
-  const [currentChordIndex, setCurrentChordIndex] = useState<number>(0);
-  const [activeChord, setActiveChord] = useState<GuitarChord>(GUITAR_CHORDS['Am']);
-  const [currentPreset, setCurrentPreset] = useState<BodyPreset>(GUITAR_PRESETS[0]);
-
-  // Visual string plucks
-  const [activeStringPluck, setActiveStringPluck] = useState<{
-    stringIndex: number;
-    fret: number;
-    id: number;
-  } | null>(null);
-
-  // Initialize Sequencer listeners
   useEffect(() => {
-    songSequencer.setBpm(bpm);
-    songSequencer.setSwing(swing);
-    songSequencer.setHumanize(humanize);
-    songSequencer.setPercussionEnabled(percussionOn);
-    songSequencer.setAutoAdvanceSections(autoAdvanceSections);
+    let cancelled = false;
+    void readSavedProject()
+      .then((saved) => {
+        if (cancelled || !saved) return;
+        songSequencer.setSections(saved.sections);
+        songSequencer.setRecordedNotes(saved.notes);
+        songSequencer.setSectionIndex(0);
+        setProject(saved);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setMessage(
+            "Önceki proje okunamadı. İndirdiğiniz proje dosyasını açabilirsiniz.",
+          );
+      })
+      .finally(() => {
+        if (!cancelled) setStorageReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-    const unsubscribeStep = songSequencer.onStep((state: SequencerState) => {
-      setIsPlaying(state.isPlaying);
-      setCurrentSectionIndex(state.currentSectionIndex);
-      setQueuedSectionIndex(state.queuedSectionIndex);
-      setCurrentChordIndex(state.currentChordIndex);
-      setCurrentRepeat(state.currentRepeat);
+  useEffect(() => {
+    audioEngine.setWavTrack(project.audioTrack);
+  }, [project.audioTrack]);
 
-      const sec = songSequencer.getCurrentSection();
-      if (state.isPlaying && sec && sec.chords[state.currentChordIndex]) {
-        const chord = GUITAR_CHORDS[sec.chords[state.currentChordIndex]];
-        if (chord) {
-          setActiveChord(chord);
-        }
+  useEffect(() => {
+    sampledGuitarEngine.allowedPitchClasses = MUSICAL_SCALES[
+      project.scaleId
+    ].intervals.map((n) => (n + noteSemitone(project.root)) % 12);
+  }, [project.root, project.scaleId]);
+
+  useEffect(() => {
+    const initial = projectRef.current;
+    songSequencer.setSections(initial.sections);
+    songSequencer.setRecordedNotes(initial.notes);
+    const offStep = songSequencer.onStep((state) => {
+      setTransport(state);
+      if (state.isPlaying) {
+        setSelected(state.currentSectionIndex);
+        setPreviewChord(null);
       }
     });
-
-    const unsubscribePluck = songSequencer.onStringPluck((stringIndex, fret) => {
-      setActiveStringPluck({ stringIndex, fret, id: Date.now() + Math.random() });
-    });
-
+    const offNotes = songSequencer.onNotesChanged(() =>
+      setProject((p) => ({ ...p, notes: songSequencer.getRecordedNotes() })),
+    );
     return () => {
-      unsubscribeStep();
-      unsubscribePluck();
+      offStep();
+      offNotes();
       songSequencer.stop();
     };
   }, []);
 
-  // Handlers
-  const handleTogglePlay = useCallback(async () => {
-    await audioEngine.unlock();
-    const playing = await songSequencer.toggle();
-    setIsPlaying(playing);
+  useEffect(() => {
+    audioEngine.configure(project.mix, project.volume);
+    audioEngine.setChordInstrument(project.riffInstrument);
+    audioEngine.setSoloInstrument(project.soloInstrument);
+    songSequencer.setBpm(project.bpm);
+    songSequencer.setSwing(project.swing);
+    songSequencer.setAutoAdvanceSections(project.autoAdvance);
+    songSequencer.setPercussionEnabled(project.percussionOn);
+    songSequencer.setGuitarMuted(project.mix.guitarMuted);
+    songSequencer.setSoloMuted(project.mix.soloMuted);
+  }, [
+    project.mix,
+    project.volume,
+    project.riffInstrument,
+    project.soloInstrument,
+    project.bpm,
+    project.swing,
+    project.autoAdvance,
+    project.percussionOn,
+  ]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    const timer = setTimeout(() => {
+      void saveProject(project)
+        .then(() => setSaveStatus("Bu tarayıcıda kaydedildi"))
+        .catch(() =>
+          setSaveStatus(
+            "Otomatik kayıt kullanılamıyor; proje dosyasını indirin.",
+          ),
+        );
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [project, storageReady]);
+
+  const togglePlay = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setMessage("");
+    try {
+      await songSequencer.toggle();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Ses başlatılamadı.");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (
+        target.closest(
+          'input, select, textarea, button, [contenteditable="true"], audio',
+        ) ||
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      )
+        return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        void togglePlay();
+      }
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
   }, []);
 
-  // Global Spacebar Transport (Play / Stop) DAW Standard
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
-        return;
-      }
-      if (e.code === 'Space' || e.key === ' ') {
-        e.preventDefault();
-        handleTogglePlay();
-      }
-    };
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [handleTogglePlay]);
-
-  const handleBpmChange = (newBpm: number) => {
-    setBpm(newBpm);
-    songSequencer.setBpm(newBpm);
-  };
-
-  const handleSwingChange = (newSwing: number) => {
-    setSwing(newSwing);
-    songSequencer.setSwing(newSwing);
-  };
-
-  const handleVolumeChange = (vol: number) => {
-    setVolume(vol);
-    audioEngine.setMasterVolume(vol);
-  };
-
-  const handleChordInstrumentChange = (type: AcousticInstrumentType) => {
-    setChordInstrument(type);
-    audioEngine.setChordInstrument(type);
-  };
-
-  const handleTogglePercussion = () => {
-    const next = !percussionOn;
-    setPercussionOn(next);
-    songSequencer.setPercussionEnabled(next);
-  };
-
-  const handleSelectSection = (index: number) => {
-    setCurrentSectionIndex(index);
-    songSequencer.setSectionIndex(index);
-    const sec = sections[index];
-    if (sec && sec.chords.length > 0 && GUITAR_CHORDS[sec.chords[0]]) {
-      setActiveChord(GUITAR_CHORDS[sec.chords[0]]);
-    }
-  };
-
-  const handleUpdateSections = (newSections: SongSection[]) => {
-    setSections(newSections);
-    songSequencer.setSections(newSections);
-  };
-
-  const handleToggleAutoAdvance = () => {
-    const next = !autoAdvanceSections;
-    setAutoAdvanceSections(next);
-    songSequencer.setAutoAdvanceSections(next);
-  };
-
-  const handleSelectPreset = (preset: BodyPreset) => {
-    setCurrentPreset(preset);
-    audioEngine.applyPreset(preset);
-  };
-
-  const handleApplyRecommendedChords = (newChords: string[]) => {
-    audioEngine.unlock();
-    const next = [...sections];
-    next[currentSectionIndex] = {
-      ...sections[currentSectionIndex],
-      chords: newChords
-    };
-    handleUpdateSections(next);
-
-    if (newChords.length > 0 && GUITAR_CHORDS[newChords[0]]) {
-      setActiveChord(GUITAR_CHORDS[newChords[0]]);
-    }
-  };
-
-  const handleReset = () => {
-    songSequencer.stop();
-    setIsPlaying(false);
-    setCurrentSectionIndex(0);
-    setQueuedSectionIndex(null);
-    setCurrentChordIndex(0);
-    setCurrentRepeat(0);
-  };
-
-  const handleExport = () => {
-    const exportData = {
-      title: 'Acoustic Groovebox Beatmaker Session',
-      timestamp: new Date().toISOString(),
-      bpm,
-      timeSignature: '4/4',
-      scale: { root: currentRoot, id: currentScaleId },
-      chordInstrument,
+  const update = (changes: Partial<SongProject>) =>
+    setProject((p) => ({ ...p, ...changes }));
+  const updateSections = (sections: SongSection[]) => {
+    songSequencer.setSections(sections);
+    setProject((p) => ({
+      ...p,
       sections,
-      guitarPreset: currentPreset
-    };
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-      type: 'application/json'
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `groovebox-session-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+      notes: songSequencer.getRecordedNotes(),
+    }));
+    setSelected(Math.min(selected, sections.length - 1));
   };
+  const selectSection = (index: number) => {
+    if (transport.isPlaying) songSequencer.queueSection(index);
+    else {
+      songSequencer.setSectionIndex(index);
+      setSelected(index);
+      setPreviewChord(null);
+    }
+  };
+  const changeKey = (root: string, scaleId: string) => {
+    const p = projectRef.current;
+    const wasPlaying = songSequencer.getIsPlaying();
+    songSequencer.stop();
+    const sections = changeSongKey(
+      p.sections,
+      p.root,
+      p.scaleId,
+      root,
+      scaleId,
+    );
+    const notes = p.notes.map((note) => ({
+      ...note,
+      midi:
+        note.instrument === "drums"
+          ? note.midi
+          : mapMidiToKey(note.midi, p.root, p.scaleId, root, scaleId),
+    }));
+    songSequencer.setSections(sections);
+    songSequencer.setRecordedNotes(notes);
+    songSequencer.setSectionIndex(Math.min(selected, sections.length - 1));
+    setProject({ ...p, root, scaleId, sections, notes });
+    setPreviewChord(null);
+    if (wasPlaying)
+      void songSequencer
+        .start()
+        .catch(() =>
+          setMessage("Yeni tonda çalmayı başlatmak için Çal düğmesine basın."),
+        );
+  };
+  const exportProject = () =>
+    downloadBlob(
+      new Blob([JSON.stringify(projectRef.current, null, 2)], {
+        type: "application/json",
+      }),
+      `songwriter-pro-${Date.now()}.json`,
+    );
+  const importProject = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      if (file.size > 32 * 1024 * 1024)
+        throw new Error("Proje dosyası 32 MB sınırını aşıyor.");
+      const loaded = parseProject(await file.text());
+      songSequencer.stop();
+      songSequencer.setIsRecordingSolo(false);
+      songSequencer.setSections(loaded.sections);
+      songSequencer.setRecordedNotes(loaded.notes);
+      songSequencer.setSectionIndex(0);
+      setProject(loaded);
+      setSelected(0);
+      setPreviewChord(null);
+      setMessage("Proje açıldı.");
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Proje açılamadı.");
+    }
+    if (importInput.current) importInput.current.value = "";
+  };
+  const section = project.sections[selected] || project.sections[0];
+  const chordId =
+    previewChord ||
+    section.chords[
+      transport.isPlaying && transport.currentSectionIndex === selected
+        ? transport.currentChordIndex
+        : 0
+    ];
+  const activeChord = GUITAR_CHORDS[chordId] || GUITAR_CHORDS.Am;
+  const changeMix = (changes: Partial<MixSettings>) =>
+    setProject((p) => ({ ...p, mix: { ...p.mix, ...changes } }));
+  if (!storageReady)
+    return (
+      <main className="workspace">
+        <section className="panel" role="status">
+          SongWriter Pro · Proje açılıyor…
+        </section>
+      </main>
+    );
 
   return (
-    <div className="h-screen max-h-screen overflow-hidden bg-[#07080b] text-neutral-100 flex flex-col font-sans select-none">
-      {/* 1. TOP HARDWARE OLED HEADER (Compact, Fixed) */}
+    <div className="songwriter-app">
       <Header
-        isPlaying={isPlaying}
-        onTogglePlay={handleTogglePlay}
-        currentPreset={currentPreset}
-        onSelectPreset={handleSelectPreset}
-        volume={volume}
-        onVolumeChange={handleVolumeChange}
-        chordInstrument={chordInstrument}
-        onChordInstrumentChange={handleChordInstrumentChange}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        percussionOn={percussionOn}
-        onTogglePercussion={handleTogglePercussion}
+        mode={mode}
+        onModeChange={setMode}
+        isPlaying={transport.isPlaying}
+        onTogglePlay={() => void togglePlay()}
+        busy={busy}
+        volume={project.volume}
+        onVolumeChange={(volume) => update({ volume })}
+        recording={recording}
       />
-
-      {/* 2. MAIN WORKSPACE (Akor Modu, Live Modu, Hibrit Mod, Stüdyo Modu) */}
-      <main className="flex-1 overflow-hidden p-2 sm:p-2.5 flex flex-col justify-between gap-2 min-h-0">
-        <div className="flex-1 min-h-0 overflow-hidden">
-          {viewMode === 'akor' ? (
-            <ChordView
-              sections={sections}
-              currentSectionIndex={currentSectionIndex}
-              onUpdateSections={handleUpdateSections}
-              activeChord={activeChord}
-              onSelectChord={setActiveChord}
-              currentRoot={currentRoot}
-              onRootChange={setCurrentRoot}
-              currentScaleId={currentScaleId}
-              onScaleChange={setCurrentScaleId}
-              activeStringPluck={activeStringPluck}
-              onPluckNote={(stringIndex: number, fret: number) => {
-                setActiveStringPluck({
-                  stringIndex,
-                  fret,
-                  id: Date.now() + Math.random()
-                });
+      <main className="workspace">
+        <section
+          className="project-bar panel"
+          aria-label="Proje ve global müzik ayarları"
+        >
+          <label className="project-name">
+            <span className="eyebrow">PROJE</span>
+            <input
+              aria-label="Proje adı"
+              maxLength={120}
+              value={project.name}
+              onChange={(e) =>
+                update({ name: e.target.value || "Adsız beste" })
+              }
+            />
+            <span className="save-status" role="status">
+              <Save size={12} />
+              {saveStatus}
+            </span>
+          </label>
+          <div className="control-row global-controls">
+            <label>
+              Global ton
+              <select
+                aria-label="Global ton"
+                value={project.root}
+                onChange={(e) => changeKey(e.target.value, project.scaleId)}
+              >
+                {ROOT_NOTES.map((root) => (
+                  <option key={root}>{root}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Global gam
+              <select
+                aria-label="Global gam"
+                value={project.scaleId}
+                onChange={(e) => changeKey(project.root, e.target.value)}
+              >
+                {Object.values(MUSICAL_SCALES).map((scale) => (
+                  <option key={scale.id} value={scale.id}>
+                    {scale.name.split(" (")[0]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Tempo
+              <input
+                aria-label="Tempo BPM"
+                type="number"
+                min={40}
+                max={220}
+                value={project.bpm}
+                onChange={(e) => {
+                  const value = +e.target.value;
+                  if (value >= 40 && value <= 220) update({ bpm: value });
+                }}
+              />
+            </label>
+          </div>
+          <div className="control-row project-actions">
+            <input
+              className="sr-only"
+              ref={importInput}
+              type="file"
+              accept=".json,application/json"
+              onChange={(e) => void importProject(e.target.files?.[0])}
+            />
+            <button
+              className="button"
+              onClick={() => importInput.current?.click()}
+            >
+              <FolderOpen size={16} />
+              Proje aç
+            </button>
+            <button className="button" onClick={exportProject}>
+              <Download size={16} />
+              Proje indir
+            </button>
+          </div>
+        </section>
+        <p className="global-note">
+          Ton ve gam bütün kısımlar için ortaktır. Değişiklik akorları ve
+          kayıtlı melodiyi birlikte uyarlar.
+        </p>
+        {message && (
+          <div className="notice" role="status">
+            {message}
+            <button aria-label="Bildirimi kapat" onClick={() => setMessage("")}>
+              ×
+            </button>
+          </div>
+        )}
+        <div className="workspace-heading">
+          <div>
+            <span className="eyebrow">
+              {mode === "groovebox"
+                ? "PLAY / WRITE / EXPLORE"
+                : "ARRANGE / MIX / RECORD"}
+            </span>
+            <h2>{mode === "groovebox" ? "Groovebox" : "Studio"}</h2>
+            <p>
+              {mode === "groovebox"
+                ? "Riff’ini kur. Enstrümanını seç. Birlikte çal."
+                : "Kısımları düzenle, parçanı kur ve sesini kaydet."}
+            </p>
+          </div>
+          <div className="transport-position">
+            <span
+              className={transport.isPlaying ? "playing-dot" : "stopped-dot"}
+            />
+            {section.name}
+            <strong>
+              {transport.currentChordIndex + 1} :{" "}
+              {String(transport.currentStep + 1).padStart(2, "0")}
+            </strong>
+            <button
+              className="icon-button"
+              aria-label="Başa sar"
+              onClick={() => {
+                songSequencer.stop();
+                songSequencer.setSectionIndex(0);
+                setSelected(0);
               }}
-            />
-          ) : viewMode === 'live' ? (
-            <LiveView
-              sections={sections}
-              currentSectionIndex={currentSectionIndex}
-              queuedSectionIndex={queuedSectionIndex}
-              currentChordIndex={currentChordIndex}
-              currentRepeat={currentRepeat}
-              activeChord={activeChord}
-              onSelectChord={setActiveChord}
-              currentRoot={currentRoot}
-              onRootChange={setCurrentRoot}
-              currentScaleId={currentScaleId}
-              onScaleChange={setCurrentScaleId}
-              onApplyRecommendedChords={handleApplyRecommendedChords}
-              isPlaying={isPlaying}
-              percussionOn={percussionOn}
-              onTogglePercussion={handleTogglePercussion}
-            />
-          ) : viewMode === 'hybrid' ? (
-            <HybridView
-              sections={sections}
-              currentSectionIndex={currentSectionIndex}
-              queuedSectionIndex={queuedSectionIndex}
-              currentChordIndex={currentChordIndex}
-              currentRepeat={currentRepeat}
-              activeChord={activeChord}
-              onSelectChord={setActiveChord}
-              currentRoot={currentRoot}
-              onRootChange={setCurrentRoot}
-              currentScaleId={currentScaleId}
-              onScaleChange={setCurrentScaleId}
-              onApplyRecommendedChords={handleApplyRecommendedChords}
-              isPlaying={isPlaying}
-              percussionOn={percussionOn}
-              onTogglePercussion={handleTogglePercussion}
-            />
-          ) : (
+            >
+              <RotateCcw size={16} />
+            </button>
+          </div>
+        </div>
+        {mode === "groovebox" && (
+          <GrooveboxView
+            project={project}
+            state={transport}
+            selected={selected}
+            activeChord={activeChord}
+            onSelectSection={selectSection}
+            onUpdateSections={updateSections}
+            onUpdate={update}
+            onPreviewChord={setPreviewChord}
+            onChangeKey={changeKey}
+          />
+        )}
+        <div hidden={mode !== "studio"} className="studio-space">
+          {mode === "studio" && (
             <StudioView
-              sections={sections}
-              currentSectionIndex={currentSectionIndex}
-              onSelectSection={handleSelectSection}
-              onUpdateSections={handleUpdateSections}
-              autoAdvanceSections={autoAdvanceSections}
-              onToggleAutoAdvance={handleToggleAutoAdvance}
-              currentChordIndex={currentChordIndex}
-              onSelectChord={setActiveChord}
-              currentRoot={currentRoot}
-              currentScaleId={currentScaleId}
-              isPlaying={isPlaying}
-              onTogglePlay={handleTogglePlay}
-              bpm={bpm}
-              currentRepeat={currentRepeat}
+              sections={project.sections}
+              currentSectionIndex={selected}
+              onSelectSection={selectSection}
+              onUpdateSections={updateSections}
+              autoAdvanceSections={project.autoAdvance}
+              onToggleAutoAdvance={() =>
+                update({ autoAdvance: !project.autoAdvance })
+              }
+              currentChordIndex={transport.currentChordIndex}
+              onSelectChord={(chord) => setPreviewChord(chord.id)}
+              currentRoot={project.root}
+              currentScaleId={project.scaleId}
+              isPlaying={transport.isPlaying}
+              onTogglePlay={() => void togglePlay()}
+              bpm={project.bpm}
+              currentRepeat={transport.currentRepeat}
+              currentStep={transport.currentStep}
+              notes={project.notes}
             />
           )}
-        </div>
-
-        {/* 3. HARDWARE MASTER DSP & MIXER STRIP (Direct Reverb, Tone, Speed, Submixes) */}
-        <div className="shrink-0">
-          <MasterDspRack
-            swing={swing}
-            onSwingChange={handleSwingChange}
-            percussionOn={percussionOn}
-            onTogglePercussion={handleTogglePercussion}
+          <RecordingPanel onRecordingChange={setRecording} />
+          <WavTrackPanel
+            track={project.audioTrack}
+            onChange={(audioTrack) => update({ audioTrack })}
           />
         </div>
-
-        {/* 4. BOTTOM FIXED TRANSPORT BAR */}
-        <div className="shrink-0">
-          <SequencerBar
-            isPlaying={isPlaying}
-            onTogglePlay={handleTogglePlay}
-            bpm={bpm}
-            onBpmChange={handleBpmChange}
-            swing={swing}
-            onSwingChange={handleSwingChange}
-            onExport={handleExport}
-            onReset={handleReset}
-            percussionOn={percussionOn}
-            onTogglePercussion={handleTogglePercussion}
-          />
-        </div>
+        <Mixer
+          mix={project.mix}
+          onChange={changeMix}
+          percussionOn={project.percussionOn}
+          onPercussionChange={(percussionOn) => update({ percussionOn })}
+          swing={project.swing}
+          onSwingChange={(swing) => update({ swing })}
+        />
+        <footer className="workspace-footer">
+          <span>
+            SongWriter Pro · {project.sections.length} kısım ·{" "}
+            {project.notes.length} solo notası
+          </span>
+          <span>Boşluk: çal / durdur · Alt+R: solo kaydı · 4/4</span>
+        </footer>
       </main>
     </div>
   );
-};
-
-export default App;
+}

@@ -1,3 +1,4 @@
+import { trackVoice } from "./voices";
 /**
  * 100% Organic Acoustic Percussion Synthesizer
  * Cajon (Bass & Slap), Studio Seed Shaker, Tambourine, Foot Stomp
@@ -15,7 +16,11 @@ export class AcousticPercussion {
   }
 
   public setVolume(vol: number): void {
-    this.outputNode.gain.setTargetAtTime(Math.max(0, Math.min(1.2, vol)), this.ctx.currentTime, 0.02);
+    this.outputNode.gain.setTargetAtTime(
+      Math.max(0, Math.min(1.2, vol)),
+      this.ctx.currentTime,
+      0.02,
+    );
   }
 
   /**
@@ -27,8 +32,8 @@ export class AcousticPercussion {
 
     // 1. Wooden body tone (sine sweep with fast drop and micro human pitch drift)
     const pitchJitter = (Math.random() - 0.5) * 4.0;
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
+    const osc = trackVoice(ctx.createOscillator());
+    osc.type = "sine";
     osc.frequency.setValueAtTime(85 + pitchJitter, now);
     osc.frequency.exponentialRampToValueAtTime(42, now + 0.12);
 
@@ -39,7 +44,7 @@ export class AcousticPercussion {
 
     // Wooden chamber body filter
     const woodFilter = ctx.createBiquadFilter();
-    woodFilter.type = 'peaking';
+    woodFilter.type = "peaking";
     woodFilter.frequency.setValueAtTime(110, now);
     woodFilter.gain.setValueAtTime(6.0, now);
 
@@ -63,14 +68,15 @@ export class AcousticPercussion {
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < len; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.025));
+      data[i] =
+        (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.025));
     }
 
-    const src = ctx.createBufferSource();
+    const src = trackVoice(ctx.createBufferSource());
     src.buffer = buf;
 
     const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
+    filter.type = "bandpass";
     filter.frequency.setValueAtTime(2200, now);
     filter.Q.setValueAtTime(2.2, now);
 
@@ -90,7 +96,12 @@ export class AcousticPercussion {
    * Studio Seed Shaker (Akustik Tohum / Marakas Çalkalama)
    * With authentic forward & backward wrist stroke physics.
    */
-  public playShaker(time?: number, velocity: number = 0.5, isAccent: boolean = false, isBackward: boolean = false): void {
+  public playShaker(
+    time?: number,
+    velocity: number = 0.5,
+    isAccent: boolean = false,
+    isBackward: boolean = false,
+  ): void {
     const ctx = this.ctx;
     const now = Math.max(time ?? ctx.currentTime, ctx.currentTime);
 
@@ -98,22 +109,27 @@ export class AcousticPercussion {
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < len; i++) {
-      const decay = Math.exp(-i / (ctx.sampleRate * (isAccent ? 0.015 : isBackward ? 0.007 : 0.010)));
+      const decay = Math.exp(
+        -i / (ctx.sampleRate * (isAccent ? 0.015 : isBackward ? 0.007 : 0.01)),
+      );
       data[i] = (Math.random() * 2 - 1) * decay;
     }
 
-    const src = ctx.createBufferSource();
+    const src = trackVoice(ctx.createBufferSource());
     src.buffer = buf;
 
     const filter = ctx.createBiquadFilter();
-    filter.type = isBackward ? 'bandpass' : 'highpass';
+    filter.type = isBackward ? "bandpass" : "highpass";
     filter.frequency.setValueAtTime(isBackward ? 3400 : 4800, now);
     if (isBackward) filter.Q.setValueAtTime(1.5, now);
 
     const gain = ctx.createGain();
     const dynamicVel = velocity * (isAccent ? 0.65 : isBackward ? 0.28 : 0.42);
     gain.gain.setValueAtTime(dynamicVel, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + (isBackward ? 0.035 : 0.045));
+    gain.gain.exponentialRampToValueAtTime(
+      0.001,
+      now + (isBackward ? 0.035 : 0.045),
+    );
 
     src.connect(filter);
     filter.connect(gain);
@@ -140,11 +156,11 @@ export class AcousticPercussion {
       data[i] = (Math.random() * 2 - 1) * env;
     }
 
-    const src = ctx.createBufferSource();
+    const src = trackVoice(ctx.createBufferSource());
     src.buffer = buf;
 
     const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
+    filter.type = "bandpass";
     filter.frequency.setValueAtTime(6200, now);
     filter.Q.setValueAtTime(3.5, now);
 
@@ -167,8 +183,8 @@ export class AcousticPercussion {
     const ctx = this.ctx;
     const now = Math.max(time ?? ctx.currentTime, ctx.currentTime);
 
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
+    const osc = trackVoice(ctx.createOscillator());
+    osc.type = "sine";
     osc.frequency.setValueAtTime(680, now);
     osc.frequency.exponentialRampToValueAtTime(340, now + 0.04);
 
@@ -177,7 +193,7 @@ export class AcousticPercussion {
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
 
     const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
+    filter.type = "bandpass";
     filter.frequency.setValueAtTime(950, now);
     filter.Q.setValueAtTime(4.0, now);
 

@@ -1,15 +1,156 @@
-import { AcousticStringVoice } from './AcousticString';
-import { createAcousticBodyImpulse } from './ImpulseGenerator';
-import { sampledGuitarEngine, getGuitarMidi, AcousticInstrumentType } from './SampledGuitarEngine';
-import { AcousticPercussion } from './AcousticPercussion';
-import { BodyPreset } from '../types';
+import { playPiano } from "./PianoEngine";
+import { stopAllVoices, trackVoice } from "./voices";
+import type { MixSettings, WavTrack } from "../project";
+import { AcousticStringVoice } from "./AcousticString";
+import { createAcousticBodyImpulse } from "./ImpulseGenerator";
+import {
+  sampledGuitarEngine,
+  getGuitarMidi,
+  AcousticInstrumentType,
+} from "./SampledGuitarEngine";
+import { AcousticPercussion } from "./AcousticPercussion";
+import { BodyPreset } from "../types";
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private isUnlocked: boolean = false;
+  private desiredMix: MixSettings | null = null;
+  private desiredVolume = 0.85;
+  private wavTrack?: WavTrack;
+  private wavBuffer: AudioBuffer | null = null;
+  private wavGain: GainNode | null = null;
+  private wavSource: AudioBufferSourceNode | null = null;
+  private wavLoading: Promise<void> = Promise.resolve();
+
+  public setWavTrack(track: WavTrack | undefined): void {
+    const changed = this.wavTrack?.dataUrl !== track?.dataUrl;
+    this.wavTrack = track;
+    if (this.wavGain && this.ctx)
+      this.wavGain.gain.setTargetAtTime(
+        track && !track.muted ? track.volume : 0,
+        this.ctx.currentTime,
+        0.02,
+      );
+    if (changed) {
+      this.wavBuffer = null;
+      try {
+        this.wavSource?.stop();
+      } catch {
+        /* already ended */
+      }
+      this.wavLoading = this.prepareWav();
+      void this.wavLoading.catch(() => {}); // ready() reports decode failures to the transport.
+    }
+  }
+
+  private async prepareWav(): Promise<void> {
+    if (!this.ctx || !this.wavTrack) return;
+    const dataUrl = this.wavTrack.dataUrl;
+    const binary = atob(dataUrl.split(",")[1]);
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    const buffer = await this.ctx.decodeAudioData(bytes.buffer);
+    if (this.wavTrack?.dataUrl === dataUrl) this.wavBuffer = buffer;
+  }
+
+  public seekWav(songSeconds: number, time: number): void {
+    try {
+      this.wavSource?.stop(time);
+    } catch {
+      /* already ended */
+    }
+    this.wavSource = null;
+    const track = this.wavTrack;
+    if (!track || !this.wavBuffer || !this.ctx || !this.wavGain) return;
+    const offset = Math.max(0, songSeconds - track.offsetSeconds);
+    if (offset >= this.wavBuffer.duration) return;
+    const source = trackVoice(this.ctx.createBufferSource());
+    source.buffer = this.wavBuffer;
+    source.connect(this.wavGain);
+    source.start(time + Math.max(0, track.offsetSeconds - songSeconds), offset);
+    this.wavSource = source;
+  }
+
+  public configure(mix: MixSettings, volume: number): void {
+    this.desiredMix = { ...mix };
+    this.desiredVolume = volume;
+    if (!this.ctx) return;
+    this.setMasterVolume(volume);
+    this.setChordVolume(mix.chordVolume);
+    this.setDrumVolume(mix.drumVolume);
+    this.setSoloVolume(mix.soloVolume);
+    this.setReverb(mix.reverbWet);
+    this.setBrightness(mix.brightness);
+    this.setBodyResonance(mix.bodyResonance);
+    this.setStrumSpeed(mix.strumSpeedMs);
+  }
 
   public getIsUnlocked(): boolean {
     return this.isUnlocked;
+  }
+
+  public stopAll(): void {
+    stopAllVoices();
+    sampledGuitarEngine.chokeActiveSoloVoices();
+  }
+
+  public async ready(
+    instruments: AcousticInstrumentType[] = [],
+  ): Promise<void> {
+    await Promise.all(
+      [
+        sampledGuitarEngine.ready(),
+        this.wavLoading,
+        ...new Set(instruments),
+      ].map((task) =>
+        typeof task === "string" ? sampledGuitarEngine.loadSamples(task) : task,
+      ),
+    );
+  }
+
+  public createRecordingOutput(): {
+    node: MediaStreamAudioDestinationNode;
+    release: () => void;
+  } {
+    const ctx = this.getContext();
+    const node = ctx.createMediaStreamDestination();
+    this.masterGain.connect(node);
+    return {
+      node,
+      release: () => {
+        this.masterGain.disconnect(node);
+        node.stream.getTracks().forEach((t) => t.stop());
+      },
+    };
+  }
+
+  public playPianoNote(
+    midi: number,
+    time?: number,
+    velocity = 0.85,
+    solo = false,
+  ): void {
+    const ctx = this.getContext();
+    playPiano(
+      ctx,
+      solo ? this.soloSubGain : this.chordSubGain,
+      midi,
+      time ?? ctx.currentTime,
+      velocity,
+    );
+  }
+
+  public getChordInstrument(): AcousticInstrumentType {
+    return sampledGuitarEngine.getChordInstrument();
+  }
+
+  public setBodyResonance(value: number): void {
+    this.preset.bodyResonance = value;
+    if (this.ctx)
+      this.bodyEqLow.gain.setTargetAtTime(
+        value * 5,
+        this.ctx.currentTime,
+        0.02,
+      );
   }
 
   // Audio Node Graph
@@ -38,21 +179,24 @@ export class AudioEngine {
 
   // Active settings
   public preset: BodyPreset = {
-    id: 'dreadnought',
-    name: 'Martin D-28 Dreadnought',
-    description: 'Dolgun baslar ve sıcak gövde tınısı.',
-    bodySize: 'dreadnought',
+    id: "dreadnought",
+    name: "Martin D-28 Dreadnought",
+    description: "Dolgun baslar ve sıcak gövde tınısı.",
+    bodySize: "dreadnought",
     brightness: 0.75,
     bodyResonance: 0.85,
     reverbWet: 0.04, // Very dry, crisp acoustic studio room
     chorusWet: 0.0,
-    strumSpeedMs: 22
+    strumSpeedMs: 22,
   };
 
   public init(): AudioContext {
     if (this.ctx) return this.ctx;
 
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext;
     this.ctx = new AudioContextClass();
 
     const ctx = this.ctx;
@@ -70,25 +214,31 @@ export class AudioEngine {
 
     this.limiter.connect(this.masterGain);
     this.masterGain.connect(ctx.destination);
+    this.wavGain = ctx.createGain();
+    this.wavGain.gain.value =
+      this.wavTrack && !this.wavTrack.muted ? this.wavTrack.volume : 0;
+    this.wavGain.connect(this.limiter);
+    this.wavLoading = this.prepareWav();
+    void this.wavLoading.catch(() => {});
 
     // 2. Acoustic Guitar Body EQ
     // Low resonance: soundhole cavity ~110Hz
     this.bodyEqLow = ctx.createBiquadFilter();
-    this.bodyEqLow.type = 'peaking';
+    this.bodyEqLow.type = "peaking";
     this.bodyEqLow.frequency.setValueAtTime(108, ctx.currentTime);
     this.bodyEqLow.Q.setValueAtTime(2.0, ctx.currentTime);
     this.bodyEqLow.gain.setValueAtTime(3.5, ctx.currentTime);
 
     // Mid resonance: spruce/mahogany body wood ~900Hz
     this.bodyEqMid = ctx.createBiquadFilter();
-    this.bodyEqMid.type = 'peaking';
+    this.bodyEqMid.type = "peaking";
     this.bodyEqMid.frequency.setValueAtTime(880, ctx.currentTime);
     this.bodyEqMid.Q.setValueAtTime(1.2, ctx.currentTime);
     this.bodyEqMid.gain.setValueAtTime(1.0, ctx.currentTime);
 
     // High presence: fingerpick attack & bronze sheen ~4.5kHz
     this.bodyEqHigh = ctx.createBiquadFilter();
-    this.bodyEqHigh.type = 'highshelf';
+    this.bodyEqHigh.type = "highshelf";
     this.bodyEqHigh.frequency.setValueAtTime(4500, ctx.currentTime);
     this.bodyEqHigh.gain.setValueAtTime(2.0, ctx.currentTime);
 
@@ -104,7 +254,12 @@ export class AudioEngine {
 
     // Reverb Bus (Tight studio acoustic room, low wet)
     this.reverbConvolver = ctx.createConvolver();
-    this.reverbConvolver.buffer = createAcousticBodyImpulse(ctx, 0.32, 9.5, this.preset.bodySize);
+    this.reverbConvolver.buffer = createAcousticBodyImpulse(
+      ctx,
+      0.32,
+      9.5,
+      this.preset.bodySize,
+    );
     this.reverbGain = ctx.createGain();
     this.reverbGain.gain.setValueAtTime(this.preset.reverbWet, ctx.currentTime);
 
@@ -122,7 +277,7 @@ export class AudioEngine {
     this.chordSubGain.connect(this.bodyEqLow);
 
     this.drumSubGain = ctx.createGain();
-    this.drumSubGain.gain.setValueAtTime(0.90, ctx.currentTime);
+    this.drumSubGain.gain.setValueAtTime(0.9, ctx.currentTime);
     this.drumSubGain.connect(this.bodyEqMid);
 
     // Chorus / 12-String Shimmer Bus
@@ -133,7 +288,7 @@ export class AudioEngine {
 
     // Subtle LFO for Chorus
     const chorusLfo = ctx.createOscillator();
-    chorusLfo.type = 'sine';
+    chorusLfo.type = "sine";
     chorusLfo.frequency.setValueAtTime(1.5, ctx.currentTime); // 1.5 Hz modulation
     const chorusLfoGain = ctx.createGain();
     chorusLfoGain.gain.setValueAtTime(0.002, ctx.currentTime); // ±2ms pitch drift
@@ -169,6 +324,8 @@ export class AudioEngine {
     // Initialize Real Sample Engine
     sampledGuitarEngine.init(ctx);
 
+    if (this.desiredMix) this.configure(this.desiredMix, this.desiredVolume);
+
     return ctx;
   }
 
@@ -184,6 +341,39 @@ export class AudioEngine {
     return sampledGuitarEngine.getSoloInstrument();
   }
 
+  public playRecordedNote(
+    midi: number,
+    time: number,
+    velocity: number,
+    instrument?: AcousticInstrumentType,
+  ): void {
+    const type = instrument || this.getSoloInstrument();
+    if (type === "piano") {
+      this.playPianoNote(midi, time, velocity, true);
+      return;
+    }
+    if (type === "drums") {
+      const hits = {
+        36: "kick",
+        38: "snare",
+        42: "hihat_closed",
+        46: "hihat_open",
+        49: "tambourine",
+        45: "wood",
+      } as const;
+      const hit = hits[midi as keyof typeof hits];
+      if (hit) this.playDrumHit(hit, time, velocity);
+      return;
+    }
+    sampledGuitarEngine.playSoloNote(
+      midi,
+      time,
+      velocity,
+      this.soloSubGain,
+      type,
+    );
+  }
+
   /**
    * Plays a solo note by MIDI number using the Virtuoso Solo Engine
    */
@@ -191,22 +381,30 @@ export class AudioEngine {
     midi: number,
     time?: number,
     velocity: number = 0.9,
-    withGraceNote: boolean = false
+    withGraceNote: boolean = false,
   ): void {
     if (!this.ctx) this.init();
     const playTime = time ?? this.ctx!.currentTime;
 
+    if (sampledGuitarEngine.getSoloInstrument() === "piano") {
+      this.playPianoNote(midi, playTime, velocity, true);
+      return;
+    }
+
     // Direct drum percussion synthesis if Davul is selected
-    if (sampledGuitarEngine.getSoloInstrument() === 'drums') {
-      const drumTypes: ('kick' | 'snare' | 'hihat_closed' | 'hihat_open' | 'tambourine' | 'wood')[] = [
-        'kick',
-        'snare',
-        'hihat_closed',
-        'hihat_open',
-        'tambourine',
-        'wood'
+    if (sampledGuitarEngine.getSoloInstrument() === "drums") {
+      const drumTypes: (
+        "kick" | "snare" | "hihat_closed" | "hihat_open" | "tambourine" | "wood"
+      )[] = [
+        "kick",
+        "snare",
+        "hihat_closed",
+        "hihat_open",
+        "tambourine",
+        "wood",
       ];
-      const hit = drumTypes[Math.abs(midi) % drumTypes.length];
+      const drumMidi = [36, 38, 42, 46, 49, 45];
+      const hit = drumTypes[Math.max(0, drumMidi.indexOf(midi))];
       this.playDrumHit(hit, playTime, velocity);
       return;
     }
@@ -218,7 +416,7 @@ export class AudioEngine {
       velocity,
       dest,
       undefined,
-      withGraceNote
+      withGraceNote,
     );
   }
 
@@ -226,31 +424,32 @@ export class AudioEngine {
    * Plays a direct acoustic drum hit (Kick, Snare, HiHats, Tambourine, Woodblock)
    */
   public playDrumHit(
-    hitType: 'kick' | 'snare' | 'hihat_closed' | 'hihat_open' | 'tambourine' | 'wood',
+    hitType:
+      "kick" | "snare" | "hihat_closed" | "hihat_open" | "tambourine" | "wood",
     time?: number,
-    velocity: number = 0.9
+    velocity: number = 0.9,
   ): void {
     if (!this.ctx) this.init();
     const playTime = time ?? this.ctx!.currentTime;
     if (!this.percussion) return;
 
     switch (hitType) {
-      case 'kick':
+      case "kick":
         this.percussion.playCajonBass(playTime, velocity);
         break;
-      case 'snare':
+      case "snare":
         this.percussion.playCajonSlap(playTime, velocity);
         break;
-      case 'hihat_closed':
+      case "hihat_closed":
         this.percussion.playShaker(playTime, velocity, false, false);
         break;
-      case 'hihat_open':
+      case "hihat_open":
         this.percussion.playShaker(playTime, velocity, true, true);
         break;
-      case 'tambourine':
+      case "tambourine":
         this.percussion.playTambourine(playTime, velocity);
         break;
-      case 'wood':
+      case "wood":
         this.percussion.playWoodBlock(playTime, velocity);
         break;
     }
@@ -265,19 +464,31 @@ export class AudioEngine {
 
   public setDrumVolume(vol: number): void {
     if (this.drumSubGain && this.ctx) {
-      this.drumSubGain.gain.setTargetAtTime(Math.max(0, Math.min(1.2, vol)), this.ctx.currentTime, 0.02);
+      this.drumSubGain.gain.setTargetAtTime(
+        Math.max(0, Math.min(1.2, vol)),
+        this.ctx.currentTime,
+        0.02,
+      );
     }
   }
 
   public setChordVolume(vol: number): void {
     if (this.chordSubGain && this.ctx) {
-      this.chordSubGain.gain.setTargetAtTime(Math.max(0, Math.min(1.2, vol)), this.ctx.currentTime, 0.02);
+      this.chordSubGain.gain.setTargetAtTime(
+        Math.max(0, Math.min(1.2, vol)),
+        this.ctx.currentTime,
+        0.02,
+      );
     }
   }
 
   public setSoloVolume(vol: number): void {
     if (this.soloSubGain && this.ctx) {
-      this.soloSubGain.gain.setTargetAtTime(Math.max(0, Math.min(1.2, vol)), this.ctx.currentTime, 0.02);
+      this.soloSubGain.gain.setTargetAtTime(
+        Math.max(0, Math.min(1.2, vol)),
+        this.ctx.currentTime,
+        0.02,
+      );
     }
   }
 
@@ -285,7 +496,7 @@ export class AudioEngine {
     if (!this.ctx) {
       this.init();
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
+    if (this.ctx && this.ctx.state === "suspended") {
       await this.ctx.resume();
     }
     this.isUnlocked = true;
@@ -312,13 +523,21 @@ export class AudioEngine {
     // Update body resonance impulse (tight studio response)
     this.reverbConvolver.buffer = createAcousticBodyImpulse(
       this.ctx,
-      preset.bodySize === 'jumbo' ? 0.38 : 0.30,
+      preset.bodySize === "jumbo" ? 0.38 : 0.3,
       9.0,
-      preset.bodySize
+      preset.bodySize,
     );
 
-    this.reverbGain.gain.setTargetAtTime(preset.reverbWet, this.ctx.currentTime, 0.05);
-    this.chorusGain.gain.setTargetAtTime(preset.chorusWet, this.ctx.currentTime, 0.05);
+    this.reverbGain.gain.setTargetAtTime(
+      preset.reverbWet,
+      this.ctx.currentTime,
+      0.05,
+    );
+    this.chorusGain.gain.setTargetAtTime(
+      preset.chorusWet,
+      this.ctx.currentTime,
+      0.05,
+    );
 
     // Body EQ adjustments based on preset
     const bassBoost = preset.bodyResonance * 5.0;
@@ -332,21 +551,33 @@ export class AudioEngine {
     this.preset.brightness = Math.max(0.1, Math.min(1.0, val));
     if (this.ctx && this.bodyEqHigh) {
       const highSheen = (this.preset.brightness - 0.5) * 6.0;
-      this.bodyEqHigh.gain.setTargetAtTime(highSheen, this.ctx.currentTime, 0.05);
+      this.bodyEqHigh.gain.setTargetAtTime(
+        highSheen,
+        this.ctx.currentTime,
+        0.05,
+      );
     }
   }
 
   public setReverb(val: number): void {
     this.preset.reverbWet = Math.max(0, Math.min(0.8, val));
     if (this.ctx && this.reverbGain) {
-      this.reverbGain.gain.setTargetAtTime(this.preset.reverbWet, this.ctx.currentTime, 0.05);
+      this.reverbGain.gain.setTargetAtTime(
+        this.preset.reverbWet,
+        this.ctx.currentTime,
+        0.05,
+      );
     }
   }
 
   public setChorus(val: number): void {
     this.preset.chorusWet = Math.max(0, Math.min(0.6, val));
     if (this.ctx && this.chorusGain) {
-      this.chorusGain.gain.setTargetAtTime(this.preset.chorusWet, this.ctx.currentTime, 0.05);
+      this.chorusGain.gain.setTargetAtTime(
+        this.preset.chorusWet,
+        this.ctx.currentTime,
+        0.05,
+      );
     }
   }
 
@@ -363,7 +594,7 @@ export class AudioEngine {
     freq: number,
     time?: number,
     velocity: number = 0.85,
-    isMuted: boolean = false
+    isMuted: boolean = false,
   ): void {
     if (!this.ctx) this.init();
     if (stringIndex < 0 || stringIndex >= 6 || fret < 0) return;
@@ -378,7 +609,7 @@ export class AudioEngine {
       playTime,
       velocity,
       targetNode,
-      isMuted
+      isMuted,
     );
 
     // 2. If sample not yet decoded or available, use physical modeling fallback
@@ -389,7 +620,7 @@ export class AudioEngine {
         velocity,
         stringIndex,
         isMuted,
-        this.preset.brightness
+        this.preset.brightness,
       );
     }
   }

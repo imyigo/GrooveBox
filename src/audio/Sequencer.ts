@@ -1,15 +1,18 @@
-import { audioEngine } from './AudioEngine';
-import { strumEngine } from './StrumEngine';
-import { GUITAR_CHORDS } from '../config/chords';
-import { STRUM_PATTERNS } from '../config/patterns';
-import { StrumBeat, SongSection } from '../types';
+import { AcousticInstrumentType } from "./SampledGuitarEngine";
+import { audioEngine } from "./AudioEngine";
+import { strumEngine } from "./StrumEngine";
+import { GUITAR_CHORDS } from "../config/chords";
+import { STRUM_PATTERNS } from "../config/patterns";
+import { StrumBeat, SongSection } from "../types";
 
 export interface RecordedSoloNote {
   id: string;
   midi: number;
   sectionIndex: number;
+  sectionId?: string;
+  instrument?: AcousticInstrumentType;
   barIndex: number; // bar index in current section
-  step: number;     // 0 to 15
+  step: number; // 0 to 15
   velocity: number;
 }
 
@@ -31,41 +34,41 @@ export interface SequencerState {
 
 export const DEFAULT_SONG_SECTIONS: SongSection[] = [
   {
-    id: 'intro',
-    name: 'Giriş (Intro)',
-    chords: ['Am', 'Dm'],
-    patternId: 'fingerpicking-travis',
+    id: "intro",
+    name: "Giriş (Intro)",
+    chords: ["Am", "Dm"],
+    patternId: "fingerpicking-travis",
     repeats: 2,
-    color: 'from-blue-600 to-cyan-700',
-    drumMode: 'shaker-only'
+    color: "from-blue-600 to-cyan-700",
+    drumMode: "shaker-only",
   },
   {
-    id: 'verse',
-    name: 'Söz (Verse)',
-    chords: ['Am', 'Dm', 'E', 'Am'],
-    patternId: 'percussive-groove',
+    id: "verse",
+    name: "Söz (Verse)",
+    chords: ["Am", "Dm", "Em", "Am"],
+    patternId: "percussive-groove",
     repeats: 2,
-    color: 'from-emerald-600 to-teal-700',
-    drumMode: 'cajon-shaker'
+    color: "from-emerald-600 to-teal-700",
+    drumMode: "cajon-shaker",
   },
   {
-    id: 'chorus',
-    name: 'Nakarat (Chorus)',
-    chords: ['F', 'G', 'C', 'Am'],
-    patternId: 'folk-rock',
+    id: "chorus",
+    name: "Nakarat (Chorus)",
+    chords: ["F", "G", "C", "Am"],
+    patternId: "folk-rock",
     repeats: 4,
-    color: 'from-amber-600 to-orange-700',
-    drumMode: 'full'
+    color: "from-amber-600 to-orange-700",
+    drumMode: "full",
   },
   {
-    id: 'solo',
-    name: 'Solo & Köprü',
-    chords: ['Dm', 'G', 'E7', 'Am'],
-    patternId: 'rumba-spanish',
+    id: "solo",
+    name: "Solo & Köprü",
+    chords: ["Dm", "G", "Em", "Am"],
+    patternId: "rumba-spanish",
     repeats: 2,
-    color: 'from-purple-600 to-pink-700',
-    drumMode: 'flamenco'
-  }
+    color: "from-purple-600 to-pink-700",
+    drumMode: "flamenco",
+  },
 ];
 
 export class SongSequencer {
@@ -98,14 +101,54 @@ export class SongSequencer {
   private nextStepTime: number = 0.0;
   private currentStep: number = 0; // 0 to 15
   private currentChordIndex: number = 0;
+  private backingSeekNeeded = true;
 
   // Listeners
+  private generation = 0;
+  private uiTimers = new Set<ReturnType<typeof setTimeout>>();
+  private audiblePosition = {
+    sectionIndex: 0,
+    sectionId: "intro",
+    barIndex: 0,
+    step: 0,
+  };
+  private noteListeners: (() => void)[] = [];
+
+  public onNotesChanged(listener: () => void): () => void {
+    this.noteListeners.push(listener);
+    return () => {
+      this.noteListeners = this.noteListeners.filter((l) => l !== listener);
+    };
+  }
+
+  public getRecordedNotes(): RecordedSoloNote[] {
+    return this.recordedSoloNotes.map((n) => ({ ...n }));
+  }
+
+  public setRecordedNotes(notes: RecordedSoloNote[]): void {
+    this.recordedSoloNotes = notes.map((n) => ({
+      ...n,
+      sectionId: n.sectionId || this.sections[n.sectionIndex]?.id,
+    }));
+    this.noteListeners.forEach((l) => l());
+  }
+
   private onStepListeners: ((state: SequencerState) => void)[] = [];
-  private onStringPluckListeners: ((stringIndex: number, fret: number) => void)[] = [];
+  private onStringPluckListeners: ((
+    stringIndex: number,
+    fret: number,
+  ) => void)[] = [];
 
   public async start(): Promise<void> {
     if (this.isRunning) return;
+    const generation = this.generation;
     await audioEngine.unlock();
+    await audioEngine.ready(
+      this.recordedSoloNotes.flatMap((note) =>
+        note.instrument ? [note.instrument] : [],
+      ),
+    );
+    if (generation !== this.generation || this.isRunning) return;
     const ctx = audioEngine.getContext();
 
     this.isRunning = true;
@@ -113,6 +156,13 @@ export class SongSequencer {
     this.currentChordIndex = 0;
     this.currentRepeat = 0;
     this.nextStepTime = ctx.currentTime + 0.05;
+    this.backingSeekNeeded = true;
+    this.audiblePosition = {
+      sectionIndex: this.currentSectionIndex,
+      sectionId: this.getCurrentSection().id,
+      barIndex: 0,
+      step: 0,
+    };
 
     if (this.timerId !== null) {
       clearInterval(this.timerId);
@@ -124,12 +174,17 @@ export class SongSequencer {
   }
 
   public stop(): void {
+    this.generation++;
     this.isRunning = false;
+    this.uiTimers.forEach((timer) => clearTimeout(timer));
+    this.uiTimers.clear();
+    audioEngine.stopAll();
     if (this.timerId !== null) {
       clearInterval(this.timerId);
       this.timerId = null;
     }
     this.currentStep = 0;
+    this.currentChordIndex = 0;
     this.currentRepeat = 0;
     this.notifyStep(null);
   }
@@ -170,12 +225,34 @@ export class SongSequencer {
   }
 
   public setSections(sections: SongSection[]): void {
-    if (sections.length > 0) {
-      this.sections = [...sections];
-      if (this.currentSectionIndex >= this.sections.length) {
-        this.currentSectionIndex = 0;
-      }
-    }
+    if (sections.length === 0) return;
+    const selectedId = this.getCurrentSection().id;
+    this.sections = sections.map((section) => ({
+      ...section,
+      chords: [...section.chords],
+    }));
+    this.currentSectionIndex = Math.max(
+      0,
+      this.sections.findIndex((section) => section.id === selectedId),
+    );
+    this.currentChordIndex = Math.min(
+      this.currentChordIndex,
+      this.getCurrentSection().chords.length - 1,
+    );
+    this.queuedSectionIndex = null;
+    this.recordedSoloNotes = this.recordedSoloNotes
+      .filter((n) =>
+        this.sections.some(
+          (section) =>
+            section.id === n.sectionId && n.barIndex < section.chords.length,
+        ),
+      )
+      .map((n) => ({
+        ...n,
+        sectionIndex: this.sections.findIndex((s) => s.id === n.sectionId),
+      }));
+    this.noteListeners.forEach((l) => l());
+    this.notifyStep(null);
   }
 
   public getCurrentSection(): SongSection {
@@ -188,6 +265,7 @@ export class SongSequencer {
       this.queuedSectionIndex = null;
       this.currentChordIndex = 0;
       this.currentRepeat = 0;
+      this.notifyStep(null);
     }
   }
 
@@ -272,19 +350,36 @@ export class SongSequencer {
   }
 
   public addSoloNote(midi: number, velocity: number = 0.9): void {
-    if (!this.isRunning || !this.isRecordingSolo) return;
+    if (
+      !this.isRunning ||
+      !this.isRecordingSolo ||
+      this.recordedSoloNotes.length >= 20000
+    )
+      return;
+    const sectionIndex = this.sections.findIndex(
+      (section) => section.id === this.audiblePosition.sectionId,
+    );
+    if (
+      sectionIndex < 0 ||
+      this.audiblePosition.barIndex >= this.sections[sectionIndex].chords.length
+    )
+      return;
     this.recordedSoloNotes.push({
       id: `${Date.now()}-${Math.random()}`,
       midi,
-      sectionIndex: this.currentSectionIndex,
-      barIndex: this.currentChordIndex,
-      step: this.currentStep,
-      velocity
+      sectionIndex,
+      sectionId: this.audiblePosition.sectionId,
+      instrument: audioEngine.getSoloInstrument(),
+      barIndex: this.audiblePosition.barIndex,
+      step: this.audiblePosition.step,
+      velocity,
     });
+    this.noteListeners.forEach((l) => l());
   }
 
   public clearSolo(): void {
     this.recordedSoloNotes = [];
+    this.noteListeners.forEach((l) => l());
   }
 
   public getSoloCount(): number {
@@ -298,10 +393,14 @@ export class SongSequencer {
     };
   }
 
-  public onStringPluck(listener: (stringIndex: number, fret: number) => void): () => void {
+  public onStringPluck(
+    listener: (stringIndex: number, fret: number) => void,
+  ): () => void {
     this.onStringPluckListeners.push(listener);
     return () => {
-      this.onStringPluckListeners = this.onStringPluckListeners.filter((l) => l !== listener);
+      this.onStringPluckListeners = this.onStringPluckListeners.filter(
+        (l) => l !== listener,
+      );
     };
   }
 
@@ -310,7 +409,7 @@ export class SongSequencer {
     const ctx = audioEngine.getContext();
 
     // Context check: If context is suspended or closed, do not schedule past timestamps
-    if (ctx.state !== 'running') {
+    if (ctx.state !== "running") {
       return;
     }
 
@@ -322,20 +421,49 @@ export class SongSequencer {
     }
 
     while (this.nextStepTime < ctx.currentTime + this.scheduleAheadSec) {
-      this.scheduleStep(this.currentSectionIndex, this.currentChordIndex, this.currentStep, this.nextStepTime);
+      this.scheduleStep(
+        this.currentSectionIndex,
+        this.currentChordIndex,
+        this.currentStep,
+        this.nextStepTime,
+      );
       this.advanceStep();
     }
   }
 
-  private scheduleStep(sectionIdx: number, barIdx: number, step: number, time: number): void {
+  private scheduleStep(
+    sectionIdx: number,
+    barIdx: number,
+    step: number,
+    time: number,
+  ): void {
+    if (this.backingSeekNeeded) {
+      const precedingBars = this.sections
+        .slice(0, sectionIdx)
+        .reduce(
+          (total, section) => total + section.chords.length * section.repeats,
+          0,
+        );
+      audioEngine.seekWav(
+        ((precedingBars +
+          barIdx +
+          this.currentRepeat * this.sections[sectionIdx].chords.length +
+          step / 16) *
+          240) /
+          this.bpm,
+        time,
+      );
+      this.backingSeekNeeded = false;
+    }
     const section = this.sections[sectionIdx] || this.sections[0];
-    const pattern = STRUM_PATTERNS[section.patternId] || STRUM_PATTERNS['folk-rock'];
+    const pattern =
+      STRUM_PATTERNS[section.patternId] || STRUM_PATTERNS["folk-rock"];
     const beat = pattern.beats.find((b) => b.step === step);
 
     // 1. Acoustic Guitar Riff & Strumming
-    if (!this.isGuitarMuted && beat && beat.type !== 'rest') {
-      const chordId = section.chords[barIdx] || 'Am';
-      const chord = GUITAR_CHORDS[chordId] || GUITAR_CHORDS['Am'];
+    if (!this.isGuitarMuted && beat && beat.type !== "rest") {
+      const chordId = section.chords[barIdx] || "Am";
+      const chord = GUITAR_CHORDS[chordId] || GUITAR_CHORDS["Am"];
 
       strumEngine.strumChord(chord, {
         stroke: beat.type,
@@ -344,23 +472,32 @@ export class SongSequencer {
         humanize: this.humanize,
         onStringPlucked: (s, f) => {
           this.onStringPluckListeners.forEach((l) => l(s, f));
-        }
+        },
       });
     }
 
     // 2. Section-Aware Organic Acoustic Percussion
-    if (this.percussionEnabled && audioEngine.percussion && section.drumMode !== 'mute') {
-      const mode = section.drumMode || 'cajon-shaker';
+    if (
+      this.percussionEnabled &&
+      audioEngine.percussion &&
+      section.drumMode !== "mute"
+    ) {
+      const mode = section.drumMode || "cajon-shaker";
 
-      if (mode === 'shaker-only') {
+      if (mode === "shaker-only") {
         if (step % 2 === 0) {
           const isAccent = step % 4 === 0;
-          audioEngine.percussion.playShaker(time, isAccent ? 0.45 : 0.25, isAccent, !isAccent);
+          audioEngine.percussion.playShaker(
+            time,
+            isAccent ? 0.45 : 0.25,
+            isAccent,
+            !isAccent,
+          );
         }
         if (step === 4 || step === 12) {
           audioEngine.percussion.playTambourine(time, 0.4);
         }
-      } else if (mode === 'cajon-shaker') {
+      } else if (mode === "cajon-shaker") {
         if (step === 0) audioEngine.percussion.playCajonBass(time, 0.95);
         else if (step === 4) {
           audioEngine.percussion.playCajonSlap(time, 0.85);
@@ -372,11 +509,17 @@ export class SongSequencer {
         }
         if (step % 2 === 0) {
           const isAccent = step % 4 === 0;
-          audioEngine.percussion.playShaker(time, isAccent ? 0.4 : 0.22, isAccent, !isAccent);
+          audioEngine.percussion.playShaker(
+            time,
+            isAccent ? 0.4 : 0.22,
+            isAccent,
+            !isAccent,
+          );
         }
-      } else if (mode === 'full') {
+      } else if (mode === "full") {
         // Full acoustic beat: syncopated kick/bass + slap + jingle
-        if (step === 0 || step === 10) audioEngine.percussion.playCajonBass(time, 1.0);
+        if (step === 0 || step === 10)
+          audioEngine.percussion.playCajonBass(time, 1.0);
         else if (step === 4 || step === 12) {
           audioEngine.percussion.playCajonSlap(time, 0.95);
           audioEngine.percussion.playTambourine(time, 0.8);
@@ -384,12 +527,19 @@ export class SongSequencer {
 
         if (step % 2 === 0) {
           const isAccent = step % 4 === 0;
-          audioEngine.percussion.playShaker(time, isAccent ? 0.38 : 0.22, isAccent, !isAccent);
+          audioEngine.percussion.playShaker(
+            time,
+            isAccent ? 0.38 : 0.22,
+            isAccent,
+            !isAccent,
+          );
         }
-      } else if (mode === 'flamenco') {
+      } else if (mode === "flamenco") {
         // Energetic Flamenco / Rumba
-        if (step === 0 || step === 8) audioEngine.percussion.playCajonBass(time, 0.95);
-        if (step === 3 || step === 11) audioEngine.percussion.playCajonSlap(time, 0.85);
+        if (step === 0 || step === 8)
+          audioEngine.percussion.playCajonBass(time, 0.95);
+        if (step === 3 || step === 11)
+          audioEngine.percussion.playCajonSlap(time, 0.85);
         if (step === 6 || step === 14) {
           audioEngine.percussion.playTambourine(time, 0.7);
           audioEngine.percussion.playCajonSlap(time, 0.7);
@@ -401,21 +551,34 @@ export class SongSequencer {
     // 3. Playback of Recorded Solo Loop Notes
     if (!this.isSoloMuted && this.recordedSoloNotes.length > 0) {
       const matchingNotes = this.recordedSoloNotes.filter(
-        (n) => n.sectionIndex === sectionIdx && n.barIndex === barIdx && n.step === step
+        (n) =>
+          n.sectionId === section.id &&
+          n.barIndex === barIdx &&
+          n.step === step,
       );
       matchingNotes.forEach((n) => {
-        audioEngine.playSoloMidiNote(n.midi, time, n.velocity);
+        audioEngine.playRecordedNote(n.midi, time, n.velocity, n.instrument);
       });
     }
 
     // UI sync
     const ctx = audioEngine.getContext();
     const delayMs = Math.max(0, (time - ctx.currentTime) * 1000);
-    setTimeout(() => {
-      if (this.isRunning) {
-        this.notifyStep(beat || null);
+    const snapshot = this.getState(beat || null);
+    const generation = this.generation;
+    const timer = setTimeout(() => {
+      this.uiTimers.delete(timer);
+      if (this.isRunning && generation === this.generation) {
+        this.audiblePosition = {
+          sectionIndex: sectionIdx,
+          sectionId: section.id,
+          barIndex: barIdx,
+          step,
+        };
+        this.onStepListeners.forEach((l) => l(snapshot));
       }
     }, delayMs);
+    this.uiTimers.add(timer);
   }
 
   private advanceStep(): void {
@@ -438,6 +601,7 @@ export class SongSequencer {
       // Ableton Live style Quantized Scene Launch:
       // If a new scene is queued, cleanly transition at the exact 1st beat of the bar!
       if (this.queuedSectionIndex !== null) {
+        this.backingSeekNeeded = true;
         this.currentSectionIndex = this.queuedSectionIndex;
         this.queuedSectionIndex = null;
         this.currentChordIndex = 0;
@@ -452,14 +616,27 @@ export class SongSequencer {
         this.currentRepeat++;
 
         // Check if section repeats completed
-        if (this.autoAdvanceSections && this.currentRepeat >= section.repeats) {
+        if (
+          this.autoAdvanceSections &&
+          section.repeats > 0 &&
+          this.currentRepeat >= section.repeats
+        ) {
           // Advance to NEXT SECTION (Song Chain Mode)
           this.currentRepeat = 0;
           this.currentChordIndex = 0;
-          this.currentSectionIndex = (this.currentSectionIndex + 1) % this.sections.length;
+          this.currentSectionIndex =
+            (this.currentSectionIndex + 1) % this.sections.length;
+          if (this.currentSectionIndex === 0) this.backingSeekNeeded = true;
         } else {
           // Loop current section
           this.currentChordIndex = 0;
+          if (
+            !this.autoAdvanceSections &&
+            this.currentRepeat >= section.repeats
+          ) {
+            this.currentRepeat = 0;
+            this.backingSeekNeeded = true;
+          }
         }
       } else {
         this.currentChordIndex = nextChordIdx;
@@ -467,8 +644,8 @@ export class SongSequencer {
     }
   }
 
-  private notifyStep(beat: StrumBeat | null): void {
-    const state: SequencerState = {
+  public getState(beat: StrumBeat | null = null): SequencerState {
+    return {
       isPlaying: this.isRunning,
       bpm: this.bpm,
       currentSectionIndex: this.currentSectionIndex,
@@ -481,9 +658,12 @@ export class SongSequencer {
       autoAdvanceSections: this.autoAdvanceSections,
       isGuitarMuted: this.isGuitarMuted,
       isPercussionMuted: !this.percussionEnabled,
-      isSoloMuted: this.isSoloMuted
+      isSoloMuted: this.isSoloMuted,
     };
-    this.onStepListeners.forEach((l) => l(state));
+  }
+
+  private notifyStep(beat: StrumBeat | null): void {
+    this.onStepListeners.forEach((l) => l(this.getState(beat)));
   }
 }
 

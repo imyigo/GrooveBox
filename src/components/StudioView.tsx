@@ -1,30 +1,21 @@
-import React, { useState } from 'react';
-import { GUITAR_CHORDS } from '../config/chords';
-import { getDiatonicChords } from '../config/scales';
-import { STRUM_PATTERNS } from '../config/patterns';
-import { GuitarChord, SongSection, DrumMode } from '../types';
-import { audioEngine } from '../audio/AudioEngine';
-import { songSequencer } from '../audio/Sequencer';
-import { strumEngine } from '../audio/StrumEngine';
+import { useState } from "react";
 import {
-  Play,
-  Square,
+  Copy,
   Plus,
   Trash2,
-  Copy,
   ChevronUp,
   ChevronDown,
   Repeat,
   Music,
-  Sliders,
-  Guitar,
   Drum,
-  Disc3,
-  Layers,
-  Sparkles
-} from 'lucide-react';
-
-interface StudioViewProps {
+  Piano,
+} from "lucide-react";
+import { GuitarChord, SongSection, DrumMode } from "../types";
+import { RecordedSoloNote, songSequencer } from "../audio/Sequencer";
+import { GUITAR_CHORDS } from "../config/chords";
+import { getDiatonicChords } from "../config/scales";
+import { STRUM_PATTERNS } from "../config/patterns";
+interface Props {
   sections: SongSection[];
   currentSectionIndex: number;
   onSelectSection: (index: number) => void;
@@ -39,9 +30,10 @@ interface StudioViewProps {
   onTogglePlay: () => void;
   bpm: number;
   currentRepeat?: number;
+  notes: RecordedSoloNote[];
+  currentStep?: number;
 }
-
-export const StudioView: React.FC<StudioViewProps> = ({
+export function StudioView({
   sections,
   currentSectionIndex,
   onSelectSection,
@@ -53,724 +45,376 @@ export const StudioView: React.FC<StudioViewProps> = ({
   currentRoot,
   currentScaleId,
   isPlaying,
-  onTogglePlay,
-  bpm,
-  currentRepeat = 0
-}) => {
-  const currentSection = sections[currentSectionIndex] || sections[0];
-  const diatonicChords = getDiatonicChords(currentRoot, currentScaleId);
-
-  // Track Mute & Solo States (DAW Track Headers)
-  const [guitarMuted, setGuitarMuted] = useState(false);
-  const [percussionMuted, setPercussionMuted] = useState(false);
-  const [soloMuted, setSoloMuted] = useState(false);
-
-  // Track Volumes
-  const [guitarVol, setGuitarVol] = useState(0.85);
-  const [percussionVol, setPercussionVol] = useState(0.85);
-  const [soloVol, setSoloVol] = useState(0.95);
-
-  // Quick section type template
-  const [newSectionType, setNewSectionType] = useState<string>('Söz (Verse)');
-
-  // Track Header Actions
-  const handleToggleGuitarMute = () => {
-    const next = !guitarMuted;
-    setGuitarMuted(next);
-    songSequencer.setGuitarMuted(next);
-  };
-
-  const handleTogglePercussionMute = () => {
-    const next = !percussionMuted;
-    setPercussionMuted(next);
-    songSequencer.setPercussionEnabled(!next);
-  };
-
-  const handleToggleSoloMute = () => {
-    const next = !soloMuted;
-    setSoloMuted(next);
-    songSequencer.setSoloMuted(next);
-  };
-
-  const handleGuitarVolChange = (val: number) => {
-    setGuitarVol(val);
-    audioEngine.setChordVolume(val);
-  };
-
-  const handlePercussionVolChange = (val: number) => {
-    setPercussionVol(val);
-    audioEngine.setDrumVolume(val);
-  };
-
-  const handleSoloVolChange = (val: number) => {
-    setSoloVol(val);
-    audioEngine.setSoloVolume(val);
-  };
-
-  // Timeline / Section Management
-  const handleAddSection = () => {
-    const defaultChords = diatonicChords.slice(0, 4).map((c) => c.chordId);
-    const colorPalette = [
-      'from-amber-600 to-orange-700',
-      'from-emerald-600 to-teal-700',
-      'from-blue-600 to-cyan-700',
-      'from-purple-600 to-pink-700',
-      'from-rose-600 to-red-700'
-    ];
-    const newSection: SongSection = {
-      id: `section-${Date.now()}`,
-      name: newSectionType,
-      chords: defaultChords.length ? defaultChords : ['Am', 'Dm', 'E', 'Am'],
-      patternId: 'folk-rock',
-      repeats: 2,
-      color: colorPalette[sections.length % colorPalette.length],
-      drumMode: 'cajon-shaker'
-    };
-    const next = [...sections, newSection];
-    onUpdateSections(next);
+  currentRepeat = 0,
+  notes,
+  currentStep = 0,
+}: Props) {
+  const [newType, setNewType] = useState("Söz");
+  const section = sections[currentSectionIndex] || sections[0];
+  const palette = getDiatonicChords(currentRoot, currentScaleId);
+  const patch = (changes: Partial<SongSection>) =>
+    onUpdateSections(
+      sections.map((s) => (s.id === section.id ? { ...s, ...changes } : s)),
+    );
+  const add = () => {
+    if (sections.length >= 64) return;
+    const id = crypto.randomUUID();
+    onUpdateSections([
+      ...sections,
+      {
+        id,
+        name: newType,
+        chords: [
+          palette[0].chordId,
+          palette[3].chordId,
+          palette[4].chordId,
+          palette[0].chordId,
+        ],
+        patternId: "folk-rock",
+        repeats: 2,
+        drumMode: "cajon-shaker",
+        color: "from-blue-600 to-cyan-700",
+      },
+    ]);
     onSelectSection(sections.length);
   };
-
-  const handleDuplicateSection = (index: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const source = sections[index];
-    const clone: SongSection = {
-      ...source,
-      id: `section-${Date.now()}`,
-      name: `${source.name} (Kopya)`
+  const duplicate = () => {
+    const id = crypto.randomUUID();
+    const clone = {
+      ...section,
+      id,
+      name: `${section.name} kopya`,
+      chords: [...section.chords],
     };
     const next = [...sections];
-    next.splice(index + 1, 0, clone);
+    next.splice(currentSectionIndex + 1, 0, clone);
     onUpdateSections(next);
-    onSelectSection(index + 1);
+    songSequencer.setRecordedNotes([
+      ...songSequencer.getRecordedNotes(),
+      ...notes
+        .filter((n) => n.sectionId === section.id)
+        .map((n) => ({
+          ...n,
+          id: crypto.randomUUID(),
+          sectionId: id,
+          sectionIndex: currentSectionIndex + 1,
+        })),
+    ]);
+    onSelectSection(currentSectionIndex + 1);
   };
-
-  const handleRemoveSection = (index: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (sections.length <= 1) return;
-    const next = sections.filter((_, i) => i !== index);
-    onUpdateSections(next);
-    if (currentSectionIndex >= next.length) {
-      onSelectSection(next.length - 1);
+  const remove = () => {
+    if (sections.length > 1) {
+      onUpdateSections(sections.filter((s) => s.id !== section.id));
+      onSelectSection(Math.min(currentSectionIndex, sections.length - 2));
     }
   };
-
-  const handleMoveSection = (index: number, direction: 'up' | 'down', e: React.MouseEvent) => {
-    e.stopPropagation();
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= sections.length) return;
-
+  const move = (offset: number) => {
+    const index = currentSectionIndex + offset;
+    if (index < 0 || index >= sections.length) return;
     const next = [...sections];
-    const item = next.splice(index, 1)[0];
-    next.splice(targetIndex, 0, item);
+    [next[index], next[currentSectionIndex]] = [
+      next[currentSectionIndex],
+      next[index],
+    ];
     onUpdateSections(next);
-    onSelectSection(targetIndex);
+    onSelectSection(index);
   };
-
-  const handleUpdateName = (name: string) => {
-    const next = [...sections];
-    next[currentSectionIndex] = { ...currentSection, name };
-    onUpdateSections(next);
-  };
-
-  const handleUpdateRepeats = (repeats: number) => {
-    const next = [...sections];
-    next[currentSectionIndex] = { ...currentSection, repeats };
-    onUpdateSections(next);
-  };
-
-  const handleUpdatePattern = (patternId: string) => {
-    const next = [...sections];
-    next[currentSectionIndex] = { ...currentSection, patternId };
-    onUpdateSections(next);
-  };
-
-  const handleUpdateDrumMode = (drumMode: DrumMode) => {
-    const next = [...sections];
-    next[currentSectionIndex] = { ...currentSection, drumMode };
-    onUpdateSections(next);
-  };
-
-  const handleAddChord = (chordId: string) => {
-    const next = [...sections];
-    next[currentSectionIndex] = {
-      ...currentSection,
-      chords: [...currentSection.chords, chordId]
-    };
-    onUpdateSections(next);
-    const chord = GUITAR_CHORDS[chordId];
-    if (chord) {
-      onSelectChord(chord);
-      audioEngine.unlock();
-      strumEngine.strumChord(chord, { stroke: 'down', velocity: 0.85 });
-    }
-  };
-
-  const handleRemoveChord = (chordIdx: number) => {
-    if (currentSection.chords.length <= 1) return;
-    const next = [...sections];
-    next[currentSectionIndex] = {
-      ...currentSection,
-      chords: currentSection.chords.filter((_, i) => i !== chordIdx)
-    };
-    onUpdateSections(next);
-  };
-
-  // Calculate cumulative bar counts for timeline ruler
-  let accumulatedBars = 0;
-  const sectionBarSpans = sections.map((sec) => {
-    const totalBars = sec.chords.length * sec.repeats;
-    const startBar = accumulatedBars + 1;
-    accumulatedBars += totalBars;
-    const endBar = accumulatedBars;
-    return { section: sec, totalBars, startBar, endBar };
+  let totalBars = 0;
+  const spans = sections.map((s) => {
+    const start = totalBars + 1;
+    totalBars += s.chords.length * s.repeats;
+    return { start, end: totalBars };
   });
-
+  const sectionNotes = notes.filter((n) => n.sectionId === section.id);
   return (
-    <div className="flex flex-col gap-2 h-full min-h-0 overflow-y-auto scrollbar-thin font-mono text-neutral-200">
-      {/* 1. PROFESSIONAL DAW TRANSPORT & TIMELINE HEADER (BandLab / Logic Pro / Ableton style) */}
-      <div className="bg-[#090a0e] border-2 border-[#1c1e28] rounded-xl p-2.5 sm:p-3 shadow-2xl shrink-0">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Left: DAW Branding & Playhead Status */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-700 p-0.5 shadow-md flex items-center justify-center">
-              <Layers className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-white text-xs tracking-wider uppercase">
-                  STÜDYO ZAMAN ÇİZELGESİ (ARRANGER TIMELINE)
-                </span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-mono font-bold">
-                  DAW MULTI-TRACK
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-[11px] text-neutral-400 mt-0.5">
-                <span className="text-white font-mono font-bold">
-                  BAR {String(currentSectionIndex + 1).padStart(2, '0')} : {String(currentChordIndex + 1).padStart(2, '0')} : {String(currentRepeat + 1).padStart(2, '0')}
-                </span>
-                <span>•</span>
-                <span className="text-amber-400 font-bold">{bpm} BPM</span>
-                <span>•</span>
-                <span className="text-emerald-400 font-bold">4/4</span>
-                <span>•</span>
-                <span className="text-neutral-300">Toplam: {accumulatedBars} Bar</span>
-              </div>
-            </div>
+    <div className="studio-arranger">
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">ARRANGEMENT</span>
+            <h3>
+              Parçanın akışı <span className="muted">{totalBars} ölçü</span>
+            </h3>
           </div>
-
-          {/* Center/Right: Riff Play/Stop & Song Chain Mode */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Primary Riff Playback Button */}
+          <div className="control-row">
             <button
-              onClick={onTogglePlay}
-              className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-lg active:scale-95 ${
-                isPlaying
-                  ? 'bg-red-500/20 text-red-400 border border-red-500/50 shadow-red-950/40 animate-pulse'
-                  : 'bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 hover:brightness-110 shadow-amber-500/30'
-              }`}
-            >
-              {isPlaying ? (
-                <>
-                  <Square className="w-4 h-4 fill-current" />
-                  <span>DURDUR</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>RIFF ÇAL (DÖNGÜ)</span>
-                </>
-              )}
-            </button>
-
-            {/* Song Chain vs Section Loop */}
-            <button
+              className={`button ${autoAdvanceSections ? "selected" : ""}`}
+              aria-pressed={autoAdvanceSections}
               onClick={onToggleAutoAdvance}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${
-                autoAdvanceSections
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-sm shadow-emerald-950/40'
-                  : 'bg-[#12131c] border-[#222534] text-neutral-400 hover:text-white'
-              }`}
-              title="Açıkken şarkı kısımları baştan sona sırayla çalar; kapalıyken seçili kısım döngüye girer."
             >
-              <Repeat className="w-3.5 h-3.5" />
-              <span>{autoAdvanceSections ? 'ŞARKIYI SIRAYLA ÇAL' : 'KISIM DÖNGÜSÜ (LOOP)'}</span>
+              <Repeat size={16} />
+              {autoAdvanceSections
+                ? "Kısımları sırayla çal"
+                : "Seçili kısmı döndür"}
             </button>
-
-            {/* Add Section dropdown & button */}
-            <div className="flex items-center gap-1 bg-[#12141c] border border-[#222534] rounded-xl p-0.5">
-              <select
-                value={newSectionType}
-                onChange={(e) => setNewSectionType(e.target.value)}
-                className="bg-transparent text-white font-bold text-xs px-2 py-1 focus:outline-none cursor-pointer"
-              >
-                <option value="Giriş (Intro)" className="bg-neutral-900">Giriş (Intro)</option>
-                <option value="Söz (Verse)" className="bg-neutral-900">Söz (Verse)</option>
-                <option value="Nakarat (Chorus)" className="bg-neutral-900">Nakarat (Chorus)</option>
-                <option value="Solo & Köprü" className="bg-neutral-900">Solo & Köprü</option>
-                <option value="Çıkış (Outro)" className="bg-neutral-900">Çıkış (Outro)</option>
-              </select>
-              <button
-                onClick={handleAddSection}
-                className="px-2.5 py-1 rounded-lg bg-amber-500 text-neutral-950 font-bold text-xs flex items-center gap-1 hover:brightness-110 active:scale-95 shadow-sm"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Kısım Ekle</span>
-              </button>
-            </div>
+            <select
+              aria-label="Yeni kısım türü"
+              value={newType}
+              onChange={(e) => setNewType(e.target.value)}
+            >
+              {["Giriş", "Söz", "Nakarat", "Köprü", "Solo", "Çıkış"].map(
+                (name) => (
+                  <option key={name}>{name}</option>
+                ),
+              )}
+            </select>
+            <button
+              className="button primary"
+              onClick={add}
+              disabled={sections.length >= 64}
+            >
+              <Plus size={16} />
+              Kısım ekle
+            </button>
           </div>
         </div>
-      </div>
-
-      {/* 2. LOGIC PRO / ABLETON LIVE MULTI-TRACK TIMELINE MATRIX */}
-      <div className="bg-[#0b0c10] border-2 border-[#1c1e28] rounded-xl p-2.5 shadow-2xl flex flex-col gap-1.5 shrink-0 select-none">
-        {/* TIMELINE RULER BAR */}
-        <div className="grid grid-cols-[160px_1fr] sm:grid-cols-[200px_1fr] items-center border-b border-[#1c1e28] pb-1.5 text-[10px] text-neutral-400">
-          <div className="font-bold text-neutral-500 uppercase tracking-wider pl-2 flex items-center gap-1.5">
-            <Sliders className="w-3.5 h-3.5 text-neutral-400" />
-            <span>KANALLAR (TRACKS)</span>
-          </div>
-
-          {/* Time Ruler: Bar Numbers */}
-          <div className="flex items-center gap-1 overflow-x-hidden">
-            {sectionBarSpans.map((span, sIdx) => (
-              <div
-                key={sIdx}
-                style={{ flex: span.totalBars }}
-                className="text-center font-mono border-l border-[#242738] pl-1 truncate"
-              >
-                <span className="text-white font-bold">Bar {span.startBar} - {span.endBar}</span>
-                <span className="text-[9px] text-neutral-500 ml-1">({span.section.name})</span>
+        <div className="timeline-scroll">
+          <div className="timeline">
+            <div className="track-row ruler">
+              <div className="track-label">4/4 · ÖLÇÜLER</div>
+              <div className="lane-clips">
+                {sections.map((s, index) => (
+                  <div
+                    className="ruler-span"
+                    key={s.id}
+                    style={{ flex: `${s.chords.length * s.repeats} 0 0` }}
+                  >
+                    {spans[index].start}–{spans[index].end}
+                    <span>{s.repeats}×</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {(["riff", "drums", "solo"] as const).map((track) => (
+              <div className={`track-row ${track}`} key={track}>
+                <div className="track-label">
+                  {track === "riff" ? (
+                    <Piano size={18} />
+                  ) : track === "drums" ? (
+                    <Drum size={18} />
+                  ) : (
+                    <Music size={18} />
+                  )}
+                  <div>
+                    <strong>
+                      {track === "riff"
+                        ? "Riff & akor"
+                        : track === "drums"
+                          ? "Ritim"
+                          : "Solo"}
+                    </strong>
+                    <span>
+                      {track === "solo"
+                        ? `${notes.length} kayıtlı nota`
+                        : track === "riff"
+                          ? "Gitar / piyano"
+                          : "Akustik perküsyon"}
+                    </span>
+                  </div>
+                </div>
+                <div className="lane-clips">
+                  {sections.map((s, index) => {
+                    const recorded = notes.filter((n) => n.sectionId === s.id);
+                    const progress =
+                      ((currentRepeat * s.chords.length +
+                        currentChordIndex +
+                        currentStep / 16) /
+                        (s.chords.length * s.repeats)) *
+                      100;
+                    return (
+                      <button
+                        key={s.id}
+                        className={`timeline-clip ${index === currentSectionIndex ? "selected-clip" : ""}`}
+                        style={{ flex: `${s.chords.length * s.repeats} 0 0` }}
+                        onClick={() => onSelectSection(index)}
+                        aria-label={`${s.name} ${track} kanalı`}
+                      >
+                        <span className="clip-title">{s.name}</span>
+                        {track === "riff" ? (
+                          <span className="clip-chords">
+                            {s.chords.join(" · ")}
+                          </span>
+                        ) : track === "drums" ? (
+                          <span className="clip-chords">
+                            {s.drumMode === "mute" ? "Kapalı" : s.drumMode}
+                          </span>
+                        ) : (
+                          <>
+                            <span className="clip-chords">
+                              {recorded.length
+                                ? `${recorded.length} nota`
+                                : "Henüz solo yok"}
+                            </span>
+                            <span className="mini-roll">
+                              {recorded.map((n) => (
+                                <i
+                                  key={n.id}
+                                  style={{
+                                    left: `${((n.barIndex * 16 + n.step) / (s.chords.length * 16)) * 96}%`,
+                                    bottom: `${((n.midi % 12) / 12) * 70}%`,
+                                  }}
+                                />
+                              ))}
+                            </span>
+                          </>
+                        )}
+                        {isPlaying && index === currentSectionIndex && (
+                          <span
+                            className="playhead"
+                            style={{ left: `${Math.min(100, progress)}%` }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>
         </div>
-
-        {/* TRACK 1: AKUSTİK GİTAR (CHORDS & RIFF TRACK) */}
-        <div className="grid grid-cols-[160px_1fr] sm:grid-cols-[200px_1fr] items-center bg-[#0e0f14] border border-[#20222e] rounded-lg p-1.5 gap-2">
-          {/* Track Header (Logic Pro style) */}
-          <div className="flex items-center justify-between bg-[#14151e] border border-[#252838] rounded-lg p-1.5">
-            <div className="flex items-center gap-1.5 truncate">
-              <Guitar className="w-4 h-4 text-amber-400 shrink-0" />
-              <div className="truncate">
-                <span className="text-xs font-bold text-white block truncate leading-none">Akustik Gitar</span>
-                <span className="text-[9px] text-amber-400/80 font-mono">Riff & Akor</span>
-              </div>
-            </div>
-
-            {/* Mute & Solo Buttons */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={handleToggleGuitarMute}
-                className={`w-5 h-5 rounded text-[10px] font-bold border transition-colors ${
-                  guitarMuted
-                    ? 'bg-red-500 text-white border-red-400'
-                    : 'bg-[#1e202c] border-[#303448] text-neutral-400 hover:text-white'
-                }`}
-                title="Gitarı Sustur (Mute)"
-              >
-                M
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1.2"
-                step="0.05"
-                value={guitarVol}
-                onChange={(e) => handleGuitarVolChange(parseFloat(e.target.value))}
-                className="w-10 accent-amber-500 h-1 bg-neutral-800 rounded cursor-pointer hidden sm:block"
-                title="Gitar Sesi"
-              />
-            </div>
-          </div>
-
-          {/* Track Lane: Section Clips */}
-          <div className="flex items-center gap-1.5 h-14 overflow-x-hidden">
-            {sections.map((sec, idx) => {
-              const isSelected = idx === currentSectionIndex;
-              const isPlayingThis = isPlaying && idx === currentSectionIndex;
-
-              return (
-                <div
-                  key={sec.id}
-                  onClick={() => onSelectSection(idx)}
-                  style={{ flex: sec.chords.length * sec.repeats }}
-                  className={`group relative h-full rounded-lg border-2 cursor-pointer p-1.5 flex flex-col justify-between transition-all select-none overflow-hidden ${
-                    isPlayingThis
-                      ? 'bg-gradient-to-r from-[#2e1d0f] to-[#1a1007] border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.4)]'
-                      : isSelected
-                      ? 'bg-[#181a24] border-neutral-400 shadow-md'
-                      : 'bg-[#11131a] border-[#222534] hover:border-neutral-500 opacity-90'
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="text-[11px] font-bold text-white truncate">{sec.name}</span>
-                    <span className="text-[9px] text-amber-400 font-bold">{sec.repeats}x</span>
-                  </div>
-
-                  {/* Chord blocks preview */}
-                  <div className="flex items-center gap-1 overflow-x-hidden">
-                    {sec.chords.map((c, cIdx) => (
-                      <span
-                        key={cIdx}
-                        className={`text-[9px] font-bold px-1 rounded ${
-                          isPlayingThis && cIdx === currentChordIndex
-                            ? 'bg-amber-500 text-neutral-950 font-black'
-                            : 'bg-black/40 text-neutral-300'
-                        }`}
-                      >
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Stylized wave / strum lines */}
-                  <div className="w-full h-1 bg-neutral-800/80 rounded-full overflow-hidden flex items-center">
-                    <div className="w-full h-full bg-gradient-to-r from-amber-500 to-amber-600 opacity-60" />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* TRACK 2: AKUSTİK PERKÜSYON (DRUMS & RHYTHM TRACK) */}
-        <div className="grid grid-cols-[160px_1fr] sm:grid-cols-[200px_1fr] items-center bg-[#0e0f14] border border-[#20222e] rounded-lg p-1.5 gap-2">
-          {/* Track Header */}
-          <div className="flex items-center justify-between bg-[#14151e] border border-[#252838] rounded-lg p-1.5">
-            <div className="flex items-center gap-1.5 truncate">
-              <Drum className="w-4 h-4 text-emerald-400 shrink-0" />
-              <div className="truncate">
-                <span className="text-xs font-bold text-white block truncate leading-none">Akustik Davul</span>
-                <span className="text-[9px] text-emerald-400/80 font-mono">Kahon & Shaker</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={handleTogglePercussionMute}
-                className={`w-5 h-5 rounded text-[10px] font-bold border transition-colors ${
-                  percussionMuted
-                    ? 'bg-red-500 text-white border-red-400'
-                    : 'bg-[#1e202c] border-[#303448] text-neutral-400 hover:text-white'
-                }`}
-                title="Davulu Sustur (Mute)"
-              >
-                M
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1.2"
-                step="0.05"
-                value={percussionVol}
-                onChange={(e) => handlePercussionVolChange(parseFloat(e.target.value))}
-                className="w-10 accent-emerald-500 h-1 bg-neutral-800 rounded cursor-pointer hidden sm:block"
-                title="Davul Sesi"
-              />
-            </div>
-          </div>
-
-          {/* Track Lane: Drum Pattern Clips */}
-          <div className="flex items-center gap-1.5 h-12 overflow-x-hidden">
-            {sections.map((sec, idx) => {
-              const isSelected = idx === currentSectionIndex;
-              const isPlayingThis = isPlaying && idx === currentSectionIndex;
-
-              return (
-                <div
-                  key={`drum-${sec.id}`}
-                  onClick={() => onSelectSection(idx)}
-                  style={{ flex: sec.chords.length * sec.repeats }}
-                  className={`h-full rounded-lg border cursor-pointer p-1.5 flex flex-col justify-between transition-all select-none overflow-hidden ${
-                    isPlayingThis
-                      ? 'bg-gradient-to-r from-[#0d2616] to-[#08170d] border-emerald-500'
-                      : isSelected
-                      ? 'bg-[#141c18] border-neutral-500'
-                      : 'bg-[#0f1411] border-[#1e2a22] opacity-80'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-[10px]">
-                    <span className="text-emerald-400 font-bold truncate">🥁 {sec.drumMode}</span>
-                  </div>
-                  {/* Visual beat markers */}
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: 8 }).map((_, bIdx) => (
-                      <span
-                        key={bIdx}
-                        className={`h-1.5 flex-1 rounded-full ${
-                          sec.drumMode === 'mute'
-                            ? 'bg-neutral-800'
-                            : bIdx % 2 === 0
-                            ? 'bg-emerald-400'
-                            : 'bg-emerald-700/60'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* TRACK 3: USTA SOLO & LEAD (MELODY TRACK) */}
-        <div className="grid grid-cols-[160px_1fr] sm:grid-cols-[200px_1fr] items-center bg-[#0e0f14] border border-[#20222e] rounded-lg p-1.5 gap-2">
-          {/* Track Header */}
-          <div className="flex items-center justify-between bg-[#14151e] border border-[#252838] rounded-lg p-1.5">
-            <div className="flex items-center gap-1.5 truncate">
-              <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
-              <div className="truncate">
-                <span className="text-xs font-bold text-white block truncate leading-none">Usta Solo</span>
-                <span className="text-[9px] text-cyan-400/80 font-mono">Melodi & Lead</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={handleToggleSoloMute}
-                className={`w-5 h-5 rounded text-[10px] font-bold border transition-colors ${
-                  soloMuted
-                    ? 'bg-red-500 text-white border-red-400'
-                    : 'bg-[#1e202c] border-[#303448] text-neutral-400 hover:text-white'
-                }`}
-                title="Soloyu Sustur (Mute)"
-              >
-                M
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1.2"
-                step="0.05"
-                value={soloVol}
-                onChange={(e) => handleSoloVolChange(parseFloat(e.target.value))}
-                className="w-10 accent-cyan-500 h-1 bg-neutral-800 rounded cursor-pointer hidden sm:block"
-                title="Solo Sesi"
-              />
-            </div>
-          </div>
-
-          {/* Track Lane: Solo Notes / Piano Roll Preview */}
-          <div className="flex items-center gap-1.5 h-12 overflow-x-hidden">
-            {sections.map((sec, idx) => {
-              const isSelected = idx === currentSectionIndex;
-
-              return (
-                <div
-                  key={`solo-${sec.id}`}
-                  onClick={() => onSelectSection(idx)}
-                  style={{ flex: sec.chords.length * sec.repeats }}
-                  className={`h-full rounded-lg border cursor-pointer p-1.5 flex flex-col justify-between transition-all select-none overflow-hidden ${
-                    isSelected
-                      ? 'bg-[#121926] border-cyan-500'
-                      : 'bg-[#0f141e] border-[#1d2738] opacity-80'
-                  }`}
-                >
-                  <span className="text-[10px] text-cyan-300 font-bold truncate">🎵 Canlı Klavyeye Sadık</span>
-                  <div className="w-full flex items-center gap-0.5">
-                    {Array.from({ length: 12 }).map((_, mIdx) => (
-                      <span
-                        key={mIdx}
-                        className="h-1 flex-1 bg-cyan-500/40 rounded-full"
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* 3. CLIP & SECTION DETAIL INSPECTOR (Ableton / Studio One Bottom Drawer) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 shrink-0">
-        {/* Left: Section Properties & Arrangement Controls (Cols 1-5) */}
-        <div className="lg:col-span-5 bg-[#0e0f14] border-2 border-[#20222e] rounded-xl p-3 shadow-xl space-y-2.5">
-          <div className="flex items-center justify-between border-b border-[#1c1e28] pb-1.5 text-xs">
-            <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-              <Disc3 className="w-4 h-4 text-amber-400" />
-              Kısım Özellikleri: {currentSection.name}
-            </span>
-            <span className="text-[10px] text-amber-400 font-bold font-mono">
-              #{currentSectionIndex + 1} / {sections.length}
-            </span>
-          </div>
-
-          {/* Section Name & Quick Reorder Controls */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] uppercase font-bold text-neutral-400">Kısım Adı:</label>
-              <div className="flex items-center gap-1">
-                <button
-                  disabled={currentSectionIndex === 0}
-                  onClick={(e) => handleMoveSection(currentSectionIndex, 'up', e)}
-                  className="px-1.5 py-0.5 rounded bg-[#1c1e28] hover:bg-[#252838] text-[10px] text-neutral-300 disabled:opacity-20"
-                  title="Öne Taşı"
-                >
-                  <ChevronUp className="w-3 h-3 inline" /> Öne
-                </button>
-                <button
-                  disabled={currentSectionIndex === sections.length - 1}
-                  onClick={(e) => handleMoveSection(currentSectionIndex, 'down', e)}
-                  className="px-1.5 py-0.5 rounded bg-[#1c1e28] hover:bg-[#252838] text-[10px] text-neutral-300 disabled:opacity-20"
-                  title="Arkaya Taşı"
-                >
-                  <ChevronDown className="w-3 h-3 inline" /> Arkaya
-                </button>
-                <button
-                  onClick={(e) => handleDuplicateSection(currentSectionIndex, e)}
-                  className="px-1.5 py-0.5 rounded bg-[#1c1e28] hover:bg-[#252838] text-[10px] text-cyan-300"
-                  title="Kopyala"
-                >
-                  <Copy className="w-3 h-3 inline" /> Kopyala
-                </button>
-                {sections.length > 1 && (
-                  <button
-                    onClick={(e) => handleRemoveSection(currentSectionIndex, e)}
-                    className="px-1.5 py-0.5 rounded bg-red-950/40 hover:bg-red-900/60 text-[10px] text-red-400"
-                    title="Sil"
-                  >
-                    <Trash2 className="w-3 h-3 inline" /> Sil
-                  </button>
-                )}
-              </div>
-            </div>
-            <input
-              type="text"
-              value={currentSection.name}
-              onChange={(e) => handleUpdateName(e.target.value)}
-              className="w-full bg-[#14151e] border border-[#262838] rounded-lg px-2.5 py-1 text-white font-bold text-xs focus:outline-none focus:border-amber-500"
-            />
-          </div>
-
-          {/* Repeats & Pattern Selector */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] uppercase font-bold text-neutral-400 block mb-1">
-                Döngü Tekrarı:
-              </label>
-              <div className="grid grid-cols-4 gap-1">
-                {[1, 2, 4, 8].map((rep) => (
-                  <button
-                    key={rep}
-                    onClick={() => handleUpdateRepeats(rep)}
-                    className={`py-1 rounded text-xs font-bold border transition-all ${
-                      currentSection.repeats === rep
-                        ? 'bg-amber-500 text-neutral-950 border-white'
-                        : 'bg-[#14151e] border-[#262838] text-neutral-400 hover:text-white'
-                    }`}
-                  >
-                    {rep}x
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[10px] uppercase font-bold text-neutral-400 block mb-1">
-                Riff Stili:
-              </label>
-              <select
-                value={currentSection.patternId}
-                onChange={(e) => handleUpdatePattern(e.target.value)}
-                className="w-full bg-[#14151e] border border-[#262838] rounded px-2 py-1 text-xs text-white font-bold focus:outline-none cursor-pointer"
-              >
-                {Object.values(STRUM_PATTERNS).map((p) => (
-                  <option key={p.id} value={p.id} className="bg-neutral-900 text-white">
-                    {p.name.split(' ')[0]} {p.name.split(' ')[1] || ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Drum Groove Selector */}
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-neutral-400">
-              Bu Kısma Özel Davul Ritim Modu:
-            </label>
-            <div className="grid grid-cols-2 gap-1.5">
-              {(
-                [
-                  { id: 'cajon-shaker', label: '🥁 Kahon + Shaker' },
-                  { id: 'shaker-only', label: '🌾 Sadece Shaker' },
-                  { id: 'flamenco', label: '💃 Tam Flamenko' },
-                  { id: 'mute', label: '🔇 Kapalı (Davulsuz)' }
-                ] as { id: DrumMode; label: string }[]
-              ).map((mode) => (
-                <button
-                  key={mode.id}
-                  onClick={() => handleUpdateDrumMode(mode.id)}
-                  className={`p-1.5 rounded-lg text-left text-xs font-bold border transition-all truncate ${
-                    currentSection.drumMode === mode.id
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500'
-                      : 'bg-[#14151e] border-[#262838] text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  {mode.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Section Chord Arranger & Diatonic Quick Palette (Cols 6-12) */}
-        <div className="lg:col-span-7 bg-[#0e0f14] border-2 border-[#20222e] rounded-xl p-3 shadow-xl flex flex-col justify-between">
+        <p className="muted timeline-help">
+          Kısma tıklayarak seçin. Çalma sırasında geçiş bir sonraki ölçü başında
+          yapılır. Solo şeridi kayıtlı notaları gösterir.
+        </p>
+      </section>
+      <section className="panel section-editor">
+        <div className="section-heading">
           <div>
-            <div className="flex items-center justify-between border-b border-[#1c1e28] pb-1.5 text-xs mb-2">
-              <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <Music className="w-4 h-4 text-emerald-400" />
-                Akor Sıralaması ({currentSection.chords.length} Bar):
-              </span>
-              <span className="text-[10px] text-neutral-400">
-                Aşağıdaki akorlara tıklayarak bölüme yeni barlar ekleyin
-              </span>
-            </div>
-
-            {/* Current chord blocks in this section */}
-            <div className="flex flex-wrap gap-2 my-2">
-              {currentSection.chords.map((chordId, idx) => (
-                <div
-                  key={idx}
-                  className="group relative px-3 py-1.5 rounded-xl border-2 border-[#262838] bg-[#14151e] flex items-center gap-2 select-none"
-                >
-                  <span className="text-[10px] text-neutral-500 font-bold">{idx + 1}. Bar</span>
-                  <span className="text-sm font-black font-mono text-white">{chordId}</span>
-                  {currentSection.chords.length > 1 && (
-                    <button
-                      onClick={() => handleRemoveChord(idx)}
-                      className="text-neutral-500 hover:text-red-400 transition-colors ml-1"
-                      title="Akoru kaldır"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <span className="eyebrow">SECTION EDITOR</span>
+            <h3>{section.name}</h3>
           </div>
-
-          {/* Quick Diatonic Add Palette */}
-          <div className="border-t border-[#1c1e28] pt-2">
-            <span className="text-[10px] uppercase font-bold text-neutral-400 block mb-1">
-              Tona Uygun Akor Ekle ({currentRoot} {currentScaleId}):
-            </span>
-            <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
-              {diatonicChords.map((chord) => (
+          <div className="control-row">
+            <button
+              className="icon-button"
+              aria-label="Kısmı öne taşı"
+              disabled={currentSectionIndex === 0}
+              onClick={() => move(-1)}
+            >
+              <ChevronUp size={18} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label="Kısmı arkaya taşı"
+              disabled={currentSectionIndex === sections.length - 1}
+              onClick={() => move(1)}
+            >
+              <ChevronDown size={18} />
+            </button>
+            <button className="button" onClick={duplicate}>
+              <Copy size={15} />
+              Kopyala
+            </button>
+            <button
+              className="button danger"
+              disabled={sections.length <= 1}
+              onClick={remove}
+            >
+              <Trash2 size={15} />
+              Sil
+            </button>
+          </div>
+        </div>
+        <div className="section-editor-controls">
+          <label>
+            Kısım adı
+            <input
+              aria-label="Kısım adı"
+              value={section.name}
+              maxLength={120}
+              onChange={(e) => patch({ name: e.target.value || "Adsız kısım" })}
+            />
+          </label>
+          <label>
+            Döngü tekrarı
+            <div className="segmented">
+              {[1, 2, 3, 4].map((n) => (
                 <button
-                  key={chord.degree}
-                  onClick={() => handleAddChord(chord.chordId)}
-                  className="p-1.5 rounded-lg border border-[#2a2d40] bg-[#161824] hover:border-amber-500 hover:bg-[#1f2232] text-center transition-all active:scale-95 flex flex-col items-center"
+                  key={n}
+                  className={section.repeats === n ? "active" : ""}
+                  aria-pressed={section.repeats === n}
+                  onClick={() => patch({ repeats: n })}
                 >
-                  <span className="text-[9px] font-mono text-neutral-400">{chord.roman}</span>
-                  <span className="text-xs font-bold font-mono text-white">{chord.chordId}</span>
+                  ×{n}
                 </button>
               ))}
             </div>
-          </div>
+          </label>
+          <label>
+            Riff deseni
+            <select
+              aria-label="Studio riff deseni"
+              value={section.patternId}
+              onChange={(e) => patch({ patternId: e.target.value })}
+            >
+              {Object.values(STRUM_PATTERNS).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Ritim
+            <select
+              aria-label="Kısım ritmi"
+              value={section.drumMode}
+              onChange={(e) => patch({ drumMode: e.target.value as DrumMode })}
+            >
+              {[
+                { id: "full", label: "Tam ritim" },
+                { id: "cajon-shaker", label: "Kahon + shaker" },
+                { id: "shaker-only", label: "Shaker" },
+                { id: "flamenco", label: "Flamenko" },
+                { id: "mute", label: "Kapalı" },
+              ].map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
-      </div>
+        <div className="editable-chords">
+          {section.chords.map((id, index) => (
+            <div className="editable-chord" key={`${id}-${index}`}>
+              <button
+                className="button"
+                onClick={() => onSelectChord(GUITAR_CHORDS[id])}
+              >
+                {index + 1}. {id}
+              </button>
+              <button
+                aria-label={`${index + 1}. Studio akorunu kaldır`}
+                disabled={section.chords.length <= 1}
+                onClick={() =>
+                  patch({
+                    chords: section.chords.filter((_, i) => index !== i),
+                  })
+                }
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="chord-palette">
+          <span className="muted">Tona uygun akor ekle</span>
+          {palette.map((c) => (
+            <button
+              className="button"
+              key={c.degree}
+              disabled={section.chords.length >= 64}
+              onClick={() => patch({ chords: [...section.chords, c.chordId] })}
+            >
+              {c.roman} · {c.chordId}
+            </button>
+          ))}
+        </div>
+        <p className="muted">
+          Bu kısımda {sectionNotes.length} solo notası var. Kopyalama solo
+          notalarını da taşır.
+        </p>
+      </section>
     </div>
   );
-};
+}
