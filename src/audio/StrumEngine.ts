@@ -1,6 +1,6 @@
-import { audioEngine } from './AudioEngine';
-import { GuitarChord, StrokeType } from '../types';
-import { getFretFrequency } from '../config/chords';
+import { audioEngine } from "./AudioEngine";
+import { GuitarChord, StrokeType } from "../types";
+import { getFretFrequency } from "../config/chords";
 
 export interface StrumOptions {
   stroke: StrokeType;
@@ -22,10 +22,30 @@ export class StrumEngine {
     const humanize = options.humanize ?? true;
 
     // Total strum sweep duration in seconds (20ms - 32ms total across all strings)
-    const totalSweepSec = Math.max(0.015, Math.min(0.045, (audioEngine.preset.strumSpeedMs || 22) / 1000));
+    const totalSweepSec = Math.max(
+      0.015,
+      Math.min(0.045, (audioEngine.preset.strumSpeedMs || 22) / 1000),
+    );
+
+    if (audioEngine.getChordInstrument() === "piano") {
+      if (options.stroke === "rest" || options.stroke === "mute") return;
+      const notes = [...(chord.midiNotes || [48, 52, 55])];
+      const selected =
+        options.stroke === "bass"
+          ? [notes[0] - 12]
+          : options.stroke === "treble"
+            ? [notes[1 + (Math.floor(startTime * 8) % (notes.length - 1))]]
+            : options.stroke === "up"
+              ? notes.reverse()
+              : notes;
+      selected.forEach((midi, i) =>
+        audioEngine.playPianoNote(midi, startTime + i * 0.012, baseVelocity),
+      );
+      return;
+    }
 
     // Handle Percussive Slap / Palm Mute
-    if (options.stroke === 'mute') {
+    if (options.stroke === "mute") {
       audioEngine.triggerPercussion(startTime, baseVelocity);
       // Play a quick dry muted chop across strings
       for (let s = 0; s < 6; s++) {
@@ -33,7 +53,14 @@ export class StrumEngine {
         if (fret >= 0) {
           const freq = getFretFrequency(s, fret);
           const stringDelay = s * 0.0035;
-          audioEngine.pluckString(s, fret, freq, startTime + stringDelay, baseVelocity * 0.45, true);
+          audioEngine.pluckString(
+            s,
+            fret,
+            freq,
+            startTime + stringDelay,
+            baseVelocity * 0.45,
+            true,
+          );
           if (options.onStringPlucked) {
             options.onStringPlucked(s, fret);
           }
@@ -42,19 +69,19 @@ export class StrumEngine {
       return;
     }
 
-    if (options.stroke === 'rest') {
+    if (options.stroke === "rest") {
       return;
     }
 
     // Determine string order based on stroke type
     let stringIndices: number[] = [];
-    if (options.stroke === 'down') {
+    if (options.stroke === "down") {
       // Downstroke: Bass string to Treble string (0 -> 5)
       stringIndices = [0, 1, 2, 3, 4, 5];
-    } else if (options.stroke === 'up') {
+    } else if (options.stroke === "up") {
       // Upstroke: Treble string to Bass string (5 -> 0), lighter brushing
       stringIndices = [5, 4, 3, 2, 1, 0];
-    } else if (options.stroke === 'bass') {
+    } else if (options.stroke === "bass") {
       // Bass note: Find the lowest played root string
       for (let i = 0; i < 6; i++) {
         if (chord.frets[i] >= 0) {
@@ -62,7 +89,7 @@ export class StrumEngine {
           break;
         }
       }
-    } else if (options.stroke === 'treble') {
+    } else if (options.stroke === "treble") {
       // Treble brush: Pluck high strings (2, 3, 4, 5)
       stringIndices = [2, 3, 4, 5];
     }
@@ -77,7 +104,10 @@ export class StrumEngine {
 
       // Natural Human Strum Delay: Non-linear wrist acceleration
       // The wrist speeds up as it swings through the strings!
-      const nonLinearFactor = Math.pow(orderIndex / Math.max(1, activeStrings.length - 1), 1.15);
+      const nonLinearFactor = Math.pow(
+        orderIndex / Math.max(1, activeStrings.length - 1),
+        1.15,
+      );
       let stringTime = startTime + nonLinearFactor * totalSweepSec;
 
       // Humanization: slight organic micro-rubato (±1.2ms)
@@ -90,10 +120,10 @@ export class StrumEngine {
       // In downstrokes, low strings receive more impact from wrist weight.
       // In upstrokes, high strings receive more pick pressure.
       let stringVel = baseVelocity;
-      if (options.stroke === 'down') {
-        stringVel *= 1.05 - (orderIndex * 0.04);
-      } else if (options.stroke === 'up') {
-        stringVel *= 0.85 + (orderIndex * 0.04);
+      if (options.stroke === "down") {
+        stringVel *= 1.05 - orderIndex * 0.04;
+      } else if (options.stroke === "up") {
+        stringVel *= 0.85 + orderIndex * 0.04;
       }
 
       if (humanize) {
@@ -103,7 +133,14 @@ export class StrumEngine {
 
       stringVel = Math.min(1.0, Math.max(0.15, stringVel));
 
-      audioEngine.pluckString(stringIndex, fret, freq, stringTime, stringVel, false);
+      audioEngine.pluckString(
+        stringIndex,
+        fret,
+        freq,
+        stringTime,
+        stringVel,
+        false,
+      );
 
       if (options.onStringPlucked) {
         const delayMs = Math.max(0, (stringTime - ctx.currentTime) * 1000);

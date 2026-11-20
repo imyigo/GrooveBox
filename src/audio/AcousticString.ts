@@ -1,3 +1,4 @@
+import { trackVoice } from "./voices";
 /**
  * Acoustic String Physical Modeling Synth
  * Simulates real acoustic steel/bronze string vibration, pick transient attack,
@@ -28,7 +29,7 @@ export class AcousticStringVoice {
     velocity: number = 0.8,
     stringIndex: number = 0,
     isMuted: boolean = false,
-    brightness: number = 0.8
+    brightness: number = 0.8,
   ): void {
     if (freq <= 20 || freq > 4000) return;
 
@@ -39,25 +40,30 @@ export class AcousticStringVoice {
     const stringGain = ctx.createGain();
 
     // Bass strings have longer sustain, treble strings decay faster
-    const baseDecay = isMuted 
-      ? 0.12 
-      : (3.6 - (stringIndex * 0.35)); // 3.6s on Low E down to ~1.8s on High E
+    const baseDecay = isMuted ? 0.12 : 3.6 - stringIndex * 0.35; // 3.6s on Low E down to ~1.8s on High E
     const attackTime = 0.003; // Instant mechanical pick hit
 
     const peakVolume = Math.min(1.0, velocity * (isMuted ? 0.45 : 0.85));
 
     stringGain.gain.setValueAtTime(0.0001, now);
     stringGain.gain.linearRampToValueAtTime(peakVolume, now + attackTime);
-    stringGain.gain.setTargetAtTime(0.0001, now + attackTime, isMuted ? 0.03 : baseDecay * 0.45);
+    stringGain.gain.setTargetAtTime(
+      0.0001,
+      now + attackTime,
+      isMuted ? 0.03 : baseDecay * 0.45,
+    );
 
     // Auto cleanup nodes after note finishes
-    setTimeout(() => {
-      try {
-        stringGain.disconnect();
-      } catch {
-        // Ignored
-      }
-    }, (baseDecay + 0.5) * 1000);
+    setTimeout(
+      () => {
+        try {
+          stringGain.disconnect();
+        } catch {
+          // Ignored
+        }
+      },
+      (baseDecay + 0.5) * 1000,
+    );
 
     // 2. Pick Attack Transient (The crisp "click" of the plectrum hitting the bronze wrap)
     const pickBufferLength = Math.floor(ctx.sampleRate * 0.025); // 25ms pick noise
@@ -68,13 +74,16 @@ export class AcousticStringVoice {
       pickData[i] = (Math.random() * 2 - 1) * decay;
     }
 
-    const pickSource = ctx.createBufferSource();
+    const pickSource = trackVoice(ctx.createBufferSource());
     pickSource.buffer = pickBuffer;
 
     const pickFilter = ctx.createBiquadFilter();
-    pickFilter.type = 'bandpass';
+    pickFilter.type = "bandpass";
     // Pick click is brighter on higher strings
-    pickFilter.frequency.setValueAtTime(1800 + (stringIndex * 500) * brightness, now);
+    pickFilter.frequency.setValueAtTime(
+      1800 + stringIndex * 500 * brightness,
+      now,
+    );
     pickFilter.Q.setValueAtTime(2.5, now);
 
     const pickGain = ctx.createGain();
@@ -91,27 +100,31 @@ export class AcousticStringVoice {
     // 3. String Body Tone Generators (Harmonic additive modeling with Karplus decay)
     // Acoustic bronze strings have a rich fundamental and specific harmonic spectrum
     const harmonics = [
-      { ratio: 1.0, gain: 1.0, decayMult: 1.0 },     // Fundamental
-      { ratio: 2.0, gain: 0.65, decayMult: 0.8 },    // 1st Octave (rich body)
-      { ratio: 3.0, gain: 0.35, decayMult: 0.6 },    // 5th (metallic shimmer)
-      { ratio: 4.0, gain: 0.2, decayMult: 0.45 },    // 2nd Octave
-      { ratio: 5.0, gain: 0.12, decayMult: 0.35 },   // Major 3rd
-      { ratio: 6.0, gain: 0.08, decayMult: 0.25 },   // 5th shimmer
+      { ratio: 1.0, gain: 1.0, decayMult: 1.0 }, // Fundamental
+      { ratio: 2.0, gain: 0.65, decayMult: 0.8 }, // 1st Octave (rich body)
+      { ratio: 3.0, gain: 0.35, decayMult: 0.6 }, // 5th (metallic shimmer)
+      { ratio: 4.0, gain: 0.2, decayMult: 0.45 }, // 2nd Octave
+      { ratio: 5.0, gain: 0.12, decayMult: 0.35 }, // Major 3rd
+      { ratio: 6.0, gain: 0.08, decayMult: 0.25 }, // 5th shimmer
     ];
 
     harmonics.forEach((h) => {
-      const osc = ctx.createOscillator();
+      const osc = trackVoice(ctx.createOscillator());
       // Use triangle or sawtooth blended for acoustic wood character
-      osc.type = h.ratio === 1.0 ? 'triangle' : 'sine';
+      osc.type = h.ratio === 1.0 ? "triangle" : "sine";
       osc.frequency.setValueAtTime(freq * h.ratio, now);
 
       const hGain = ctx.createGain();
-      const hDecay = isMuted ? 0.08 : (baseDecay * h.decayMult);
+      const hDecay = isMuted ? 0.08 : baseDecay * h.decayMult;
       const hVol = h.gain * (0.8 + brightness * 0.4);
 
       hGain.gain.setValueAtTime(0.0001, now);
       hGain.gain.linearRampToValueAtTime(hVol, now + attackTime);
-      hGain.gain.setTargetAtTime(0.0001, now + attackTime, isMuted ? 0.025 : hDecay * 0.45);
+      hGain.gain.setTargetAtTime(
+        0.0001,
+        now + attackTime,
+        isMuted ? 0.025 : hDecay * 0.45,
+      );
 
       osc.connect(hGain);
       hGain.connect(stringGain);
@@ -122,16 +135,14 @@ export class AcousticStringVoice {
 
     // 4. Acoustic Steel String Filter (Dynamic Lowpass that opens on strike and closes as string dies)
     const toneFilter = ctx.createBiquadFilter();
-    toneFilter.type = 'lowpass';
-    const cutoff = isMuted 
-      ? 800 
-      : Math.min(12000, freq * 14 * brightness);
+    toneFilter.type = "lowpass";
+    const cutoff = isMuted ? 800 : Math.min(12000, freq * 14 * brightness);
 
     toneFilter.frequency.setValueAtTime(cutoff, now);
     toneFilter.frequency.setTargetAtTime(
       Math.max(200, freq * 2.2),
       now,
-      isMuted ? 0.03 : 0.35
+      isMuted ? 0.03 : 0.35,
     );
     toneFilter.Q.setValueAtTime(1.8, now);
 
@@ -147,8 +158,8 @@ export class AcousticStringVoice {
     const now = Math.max(time, ctx.currentTime);
 
     // Body Thump (Low frequency wood hit)
-    const thumpOsc = ctx.createOscillator();
-    thumpOsc.type = 'sine';
+    const thumpOsc = trackVoice(ctx.createOscillator());
+    thumpOsc.type = "sine";
     thumpOsc.frequency.setValueAtTime(130, now);
     thumpOsc.frequency.setTargetAtTime(45, now, 0.03);
 
@@ -167,14 +178,15 @@ export class AcousticStringVoice {
     const noiseBuffer = ctx.createBuffer(1, noiseLength, ctx.sampleRate);
     const noiseData = noiseBuffer.getChannelData(0);
     for (let i = 0; i < noiseLength; i++) {
-      noiseData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.012));
+      noiseData[i] =
+        (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.012));
     }
 
-    const noiseSource = ctx.createBufferSource();
+    const noiseSource = trackVoice(ctx.createBufferSource());
     noiseSource.buffer = noiseBuffer;
 
     const noiseFilter = ctx.createBiquadFilter();
-    noiseFilter.type = 'bandpass';
+    noiseFilter.type = "bandpass";
     noiseFilter.frequency.setValueAtTime(1200, now);
     noiseFilter.Q.setValueAtTime(1.5, now);
 
