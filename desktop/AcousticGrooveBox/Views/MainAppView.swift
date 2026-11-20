@@ -136,18 +136,37 @@ public struct MainAppView: View {
             HStack(spacing: 16) {
                 // Play / Stop Button
                 Button(action: {
-                    audioEngine.togglePlayback(sections: sections)
+                    audioEngine.togglePlayback(sections: sections, instrument: selectedInstrument)
                 }) {
                     HStack(spacing: 6) {
                         Image(systemName: audioEngine.isPlaying ? "stop.fill" : "play.fill")
                         Text(audioEngine.isPlaying ? "DURDUR" : "RIFF ÇAL (DÖNGÜ)")
                     }
                     .font(.system(size: 12, weight: .black))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(audioEngine.isPlaying ? Color.red : Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(audioEngine.isPlaying ? .red : .orange)
+                .buttonStyle(.plain)
+
+                // Ritim Aç/Kapat Butonu
+                Button(action: {
+                    audioEngine.percussionEnabled.toggle()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: audioEngine.percussionEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                        Text(audioEngine.percussionEnabled ? "RİTİM: AÇIK" : "RİTİM: KAPALI")
+                    }
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(audioEngine.percussionEnabled ? Color.green.opacity(0.8) : Color(white: 0.15))
+                    .foregroundColor(.white)
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
 
                 // Tempo (BPM)
                 HStack(spacing: 8) {

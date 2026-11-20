@@ -37,24 +37,44 @@ public struct SmartControlsView: View {
                         .font(.system(size: 8, weight: .bold, design: .monospaced))
                         .foregroundColor(.gray)
 
-                    Button("Warm Wood") {
+                    Button(action: {
                         audioEngine.setSpaceDesignerPreset(.mediumChamber)
+                    }) {
+                        Text("Warm Wood")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.orange)
+                            .foregroundColor(.white)
+                            .cornerRadius(4)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                    .controlSize(.mini)
+                    .buttonStyle(.plain)
 
-                    Button("Concert Hall") {
+                    Button(action: {
                         audioEngine.setSpaceDesignerPreset(.largeHall)
+                    }) {
+                        Text("Concert Hall")
+                            .font(.system(size: 9, weight: .medium))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color(white: 0.16))
+                            .foregroundColor(.secondary)
+                            .cornerRadius(4)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
+                    .buttonStyle(.plain)
 
-                    Button("Plate") {
+                    Button(action: {
                         audioEngine.setSpaceDesignerPreset(.plate)
+                    }) {
+                        Text("Plate")
+                            .font(.system(size: 9, weight: .medium))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color(white: 0.16))
+                            .foregroundColor(.secondary)
+                            .cornerRadius(4)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 4)
@@ -71,7 +91,9 @@ public struct SmartControlsView: View {
 
                 LogicKnob(title: "Pick Attack", value: $audioEngine.pickAttack, color: .green) { _ in }
 
-                LogicKnob(title: "Space Reverb", value: $audioEngine.spaceReverbWet, color: .purple) { _ in }
+                LogicKnob(title: "Space Reverb", value: $audioEngine.spaceReverbWet, color: .purple) { val in
+                    audioEngine.setReverbWet(val)
+                }
             }
         }
         .padding(12)

@@ -176,7 +176,7 @@ public struct GrooveBoxView: View {
                             let chordObj = ChordLibrary.chordNamed(chordName)
 
                             Button(action: {
-                                audioEngine.strumChord(chordObj, downstroke: true)
+                                audioEngine.strumChord(chordObj, downstroke: true, instrument: selectedInstrument)
                             }) {
                                 VStack(spacing: 2) {
                                     Text("\(barIdx + 1). Bar")
@@ -239,7 +239,7 @@ public struct GrooveBoxView: View {
                                 if selectedInstrument == .drums {
                                     audioEngine.playDrumHit(keyIdx % 2 == 0 ? "kick" : "snare")
                                 } else {
-                                    audioEngine.playStringNote(freq: noteFreq, duration: 2.5, velocity: 0.9)
+                                    audioEngine.playSoloNote(freq: noteFreq, duration: 2.5, velocity: 0.9, instrument: selectedInstrument)
                                 }
                             }) {
                                 VStack {
