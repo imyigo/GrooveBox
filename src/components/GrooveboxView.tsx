@@ -8,6 +8,7 @@ import { getDiatonicChords } from "../config/scales";
 import { SoloKeyboard } from "./SoloKeyboard";
 import { audioEngine } from "../audio/AudioEngine";
 import { strumEngine } from "../audio/StrumEngine";
+import { ChordEntry } from "./ChordEntry";
 
 interface Props {
   project: SongProject;
@@ -187,12 +188,21 @@ export function GrooveboxView({
             </button>
           ))}
         </div>
+        <ChordEntry
+          sectionId={section.id}
+          chords={section.chords}
+          onChange={(chords) => updateSection({ chords })}
+        />
       </section>
       <SoloKeyboard
         currentRoot={project.root}
         currentScaleId={project.scaleId}
         activeChord={activeChord}
         instrument={project.soloInstrument}
+        harmonyMode={project.soloMode || "chord-tones"}
+        onHarmonyChange={(soloMode) => onUpdate({ soloMode })}
+        sectionId={section.id}
+        sectionName={section.name}
         onInstrumentChange={(soloInstrument) => onUpdate({ soloInstrument })}
         isPlaying={state.isPlaying}
       />

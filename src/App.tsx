@@ -7,6 +7,9 @@ import { RecordingPanel } from "./components/RecordingPanel";
 import { WavTrackPanel } from "./components/WavTrackPanel";
 import { readSavedProject, saveProject } from "./projectStorage";
 import { Mixer } from "./components/Mixer";
+import { SongIdeaPanel } from "./components/SongIdeaPanel";
+import { LyricsPanel } from "./components/LyricsPanel";
+import { SongStyle, ideaChords, ideaSections } from "./config/songIdeas";
 import { audioEngine } from "./audio/AudioEngine";
 import { sampledGuitarEngine } from "./audio/SampledGuitarEngine";
 import { songSequencer, SequencerState } from "./audio/Sequencer";
@@ -45,6 +48,10 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  const [undoIdea, setUndoIdea] = useState<{
+    project: SongProject;
+    selected: number;
+  } | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const projectRef = useRef(project);
   const busyRef = useRef(false);
@@ -95,9 +102,10 @@ export default function App() {
         setPreviewChord(null);
       }
     });
-    const offNotes = songSequencer.onNotesChanged(() =>
-      setProject((p) => ({ ...p, notes: songSequencer.getRecordedNotes() })),
-    );
+    const offNotes = songSequencer.onNotesChanged(() => {
+      if (songSequencer.getIsRecordingSolo()) setUndoIdea(null);
+      setProject((p) => ({ ...p, notes: songSequencer.getRecordedNotes() }));
+    });
     return () => {
       offStep();
       offNotes();
@@ -176,9 +184,12 @@ export default function App() {
     return () => window.removeEventListener("keydown", keydown);
   }, []);
 
-  const update = (changes: Partial<SongProject>) =>
+  const update = (changes: Partial<SongProject>) => {
+    setUndoIdea(null);
     setProject((p) => ({ ...p, ...changes }));
+  };
   const updateSections = (sections: SongSection[]) => {
+    setUndoIdea(null);
     songSequencer.setSections(sections);
     setProject((p) => ({
       ...p,
@@ -196,6 +207,7 @@ export default function App() {
     }
   };
   const changeKey = (root: string, scaleId: string) => {
+    setUndoIdea(null);
     const p = projectRef.current;
     const wasPlaying = songSequencer.getIsPlaying();
     songSequencer.stop();
@@ -209,7 +221,7 @@ export default function App() {
     const notes = p.notes.map((note) => ({
       ...note,
       midi:
-        note.instrument === "drums"
+        note.instrument === "drums" || note.harmonyMode === "chromatic"
           ? note.midi
           : mapMidiToKey(note.midi, p.root, p.scaleId, root, scaleId),
     }));
@@ -232,6 +244,77 @@ export default function App() {
       }),
       `songwriter-pro-${Date.now()}.json`,
     );
+  const restoreProject = (next: SongProject, index = 0) => {
+    songSequencer.stop();
+    songSequencer.setIsRecordingSolo(false);
+    songSequencer.setSections(next.sections);
+    songSequencer.setRecordedNotes(next.notes);
+    songSequencer.setSectionIndex(index);
+    setProject(next);
+    setSelected(index);
+    setPreviewChord(null);
+  };
+  const applyIdea = (
+    style: SongStyle,
+    variation: number,
+    wholeSong: boolean,
+  ) => {
+    const current = projectRef.current;
+    setUndoIdea({ project: current, selected });
+    const mappedSections = changeSongKey(
+      current.sections,
+      current.root,
+      current.scaleId,
+      current.root,
+      style.scaleId,
+    );
+    const sections = wholeSong
+      ? ideaSections(style, current.root, variation)
+      : mappedSections.map((s, index) =>
+          index === selected
+            ? {
+                ...s,
+                chords: ideaChords(style, current.root, variation),
+                patternId: style.patternId,
+              }
+            : s,
+        );
+    const notes = wholeSong
+      ? []
+      : current.notes
+          .map((note) => ({
+            ...note,
+            midi:
+              note.instrument === "drums" || note.harmonyMode === "chromatic"
+                ? note.midi
+                : mapMidiToKey(
+                    note.midi,
+                    current.root,
+                    current.scaleId,
+                    current.root,
+                    style.scaleId,
+                  ),
+          }))
+          .filter((note) =>
+            sections.some(
+              (s) => s.id === note.sectionId && note.barIndex < s.chords.length,
+            ),
+          );
+    restoreProject(
+      {
+        ...current,
+        scaleId: style.scaleId,
+        bpm: style.bpm,
+        riffInstrument: style.instrument,
+        sections,
+        notes,
+      },
+      wholeSong ? 0 : selected,
+    );
+    setMessage(
+      `${style.name} eşliği hazır. Çal düğmesine basıp söz veya melodi deneyebilirsin.`,
+    );
+  };
   const importProject = async (file: File | undefined) => {
     if (!file) return;
     try {
@@ -244,6 +327,7 @@ export default function App() {
       songSequencer.setRecordedNotes(loaded.notes);
       songSequencer.setSectionIndex(0);
       setProject(loaded);
+      setUndoIdea(null);
       setSelected(0);
       setPreviewChord(null);
       setMessage("Proje açıldı.");
@@ -305,32 +389,37 @@ export default function App() {
             </span>
           </label>
           <div className="control-row global-controls">
-            <label>
-              Global ton
-              <select
-                aria-label="Global ton"
-                value={project.root}
-                onChange={(e) => changeKey(e.target.value, project.scaleId)}
-              >
-                {ROOT_NOTES.map((root) => (
-                  <option key={root}>{root}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Global gam
-              <select
-                aria-label="Global gam"
-                value={project.scaleId}
-                onChange={(e) => changeKey(project.root, e.target.value)}
-              >
-                {Object.values(MUSICAL_SCALES).map((scale) => (
-                  <option key={scale.id} value={scale.id}>
-                    {scale.name.split(" (")[0]}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <details className="global-harmony">
+              <summary>Ton / gam · isteğe bağlı</summary>
+              <div className="control-row">
+                <label>
+                  Global ton
+                  <select
+                    aria-label="Global ton"
+                    value={project.root}
+                    onChange={(e) => changeKey(e.target.value, project.scaleId)}
+                  >
+                    {ROOT_NOTES.map((root) => (
+                      <option key={root}>{root}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Global gam
+                  <select
+                    aria-label="Global gam"
+                    value={project.scaleId}
+                    onChange={(e) => changeKey(project.root, e.target.value)}
+                  >
+                    {Object.values(MUSICAL_SCALES).map((scale) => (
+                      <option key={scale.id} value={scale.id}>
+                        {scale.name.split(" (")[0]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </details>
             <label>
               Tempo
               <input
@@ -416,6 +505,18 @@ export default function App() {
           </div>
         </div>
         {mode === "groovebox" && (
+          <SongIdeaPanel
+            root={project.root}
+            onApply={applyIdea}
+            canUndo={!!undoIdea}
+            onUndo={() => {
+              if (undoIdea) restoreProject(undoIdea.project, undoIdea.selected);
+              setUndoIdea(null);
+              setMessage("Son preset değişikliği geri alındı.");
+            }}
+          />
+        )}
+        {mode === "groovebox" && (
           <GrooveboxView
             project={project}
             state={transport}
@@ -457,6 +558,18 @@ export default function App() {
             onChange={(audioTrack) => update({ audioTrack })}
           />
         </div>
+        <LyricsPanel
+          section={section}
+          onChange={(lyrics) => {
+            setUndoIdea(null);
+            setProject((p) => ({
+              ...p,
+              sections: p.sections.map((s) =>
+                s.id === section.id ? { ...s, lyrics } : s,
+              ),
+            }));
+          }}
+        />
         <Mixer
           mix={project.mix}
           onChange={changeMix}

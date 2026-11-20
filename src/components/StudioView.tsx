@@ -15,6 +15,7 @@ import { RecordedSoloNote, songSequencer } from "../audio/Sequencer";
 import { GUITAR_CHORDS } from "../config/chords";
 import { getDiatonicChords } from "../config/scales";
 import { STRUM_PATTERNS } from "../config/patterns";
+import { ChordEntry } from "./ChordEntry";
 interface Props {
   sections: SongSection[];
   currentSectionIndex: number;
@@ -185,91 +186,105 @@ export function StudioView({
                 ))}
               </div>
             </div>
-            {(["riff", "drums", "solo"] as const).map((track) => (
-              <div className={`track-row ${track}`} key={track}>
-                <div className="track-label">
-                  {track === "riff" ? (
-                    <Piano size={18} />
-                  ) : track === "drums" ? (
-                    <Drum size={18} />
-                  ) : (
-                    <Music size={18} />
-                  )}
-                  <div>
-                    <strong>
-                      {track === "riff"
-                        ? "Riff & akor"
-                        : track === "drums"
-                          ? "Ritim"
-                          : "Solo"}
-                    </strong>
-                    <span>
-                      {track === "solo"
-                        ? `${notes.length} kayıtlı nota`
-                        : track === "riff"
-                          ? "Gitar / piyano"
-                          : "Akustik perküsyon"}
-                    </span>
+            {(["riff", "drums", "recorded-drums", "solo"] as const).map(
+              (track) => (
+                <div className={`track-row ${track}`} key={track}>
+                  <div className="track-label">
+                    {track === "riff" ? (
+                      <Piano size={18} />
+                    ) : track === "drums" || track === "recorded-drums" ? (
+                      <Drum size={18} />
+                    ) : (
+                      <Music size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        {track === "riff"
+                          ? "Riff & akor"
+                          : track === "drums"
+                            ? "Ritim"
+                            : track === "recorded-drums"
+                              ? "Davul kaydı"
+                              : "Solo"}
+                      </strong>
+                      <span>
+                        {track === "solo"
+                          ? `${notes.filter((n) => n.instrument !== "drums").length} kayıtlı nota`
+                          : track === "recorded-drums"
+                            ? `${notes.filter((n) => n.instrument === "drums").length} kayıtlı vuruş`
+                            : track === "riff"
+                              ? "Gitar / piyano"
+                              : "Akustik perküsyon"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="lane-clips">
+                    {sections.map((s, index) => {
+                      const recorded = notes.filter(
+                        (n) =>
+                          n.sectionId === s.id &&
+                          (track === "recorded-drums"
+                            ? n.instrument === "drums"
+                            : n.instrument !== "drums"),
+                      );
+                      const progress =
+                        ((currentRepeat * s.chords.length +
+                          currentChordIndex +
+                          currentStep / 16) /
+                          (s.chords.length * s.repeats)) *
+                        100;
+                      return (
+                        <button
+                          key={s.id}
+                          className={`timeline-clip ${index === currentSectionIndex ? "selected-clip" : ""}`}
+                          style={{ flex: `${s.chords.length * s.repeats} 0 0` }}
+                          onClick={() => onSelectSection(index)}
+                          aria-label={`${s.name} ${track} kanalı`}
+                        >
+                          <span className="clip-title">{s.name}</span>
+                          {track === "riff" ? (
+                            <span className="clip-chords">
+                              {s.chords.join(" · ")}
+                            </span>
+                          ) : track === "drums" ? (
+                            <span className="clip-chords">
+                              {s.drumMode === "mute" ? "Kapalı" : s.drumMode}
+                            </span>
+                          ) : (
+                            <>
+                              <span className="clip-chords">
+                                {recorded.length
+                                  ? `${recorded.length} ${track === "recorded-drums" ? "vuruş" : "nota"}`
+                                  : track === "recorded-drums"
+                                    ? "Henüz davul kaydı yok"
+                                    : "Henüz solo yok"}
+                              </span>
+                              <span className="mini-roll">
+                                {recorded.map((n) => (
+                                  <i
+                                    key={n.id}
+                                    style={{
+                                      left: `${((n.barIndex * 16 + n.step) / (s.chords.length * 16)) * 96}%`,
+                                      bottom: `${((n.midi % 12) / 12) * 70}%`,
+                                    }}
+                                  />
+                                ))}
+                              </span>
+                            </>
+                          )}
+                          {isPlaying && index === currentSectionIndex && (
+                            <span
+                              className="playhead"
+                              style={{ left: `${Math.min(100, progress)}%` }}
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-                <div className="lane-clips">
-                  {sections.map((s, index) => {
-                    const recorded = notes.filter((n) => n.sectionId === s.id);
-                    const progress =
-                      ((currentRepeat * s.chords.length +
-                        currentChordIndex +
-                        currentStep / 16) /
-                        (s.chords.length * s.repeats)) *
-                      100;
-                    return (
-                      <button
-                        key={s.id}
-                        className={`timeline-clip ${index === currentSectionIndex ? "selected-clip" : ""}`}
-                        style={{ flex: `${s.chords.length * s.repeats} 0 0` }}
-                        onClick={() => onSelectSection(index)}
-                        aria-label={`${s.name} ${track} kanalı`}
-                      >
-                        <span className="clip-title">{s.name}</span>
-                        {track === "riff" ? (
-                          <span className="clip-chords">
-                            {s.chords.join(" · ")}
-                          </span>
-                        ) : track === "drums" ? (
-                          <span className="clip-chords">
-                            {s.drumMode === "mute" ? "Kapalı" : s.drumMode}
-                          </span>
-                        ) : (
-                          <>
-                            <span className="clip-chords">
-                              {recorded.length
-                                ? `${recorded.length} nota`
-                                : "Henüz solo yok"}
-                            </span>
-                            <span className="mini-roll">
-                              {recorded.map((n) => (
-                                <i
-                                  key={n.id}
-                                  style={{
-                                    left: `${((n.barIndex * 16 + n.step) / (s.chords.length * 16)) * 96}%`,
-                                    bottom: `${((n.midi % 12) / 12) * 70}%`,
-                                  }}
-                                />
-                              ))}
-                            </span>
-                          </>
-                        )}
-                        {isPlaying && index === currentSectionIndex && (
-                          <span
-                            className="playhead"
-                            style={{ left: `${Math.min(100, progress)}%` }}
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+              ),
+            )}
           </div>
         </div>
         <p className="muted timeline-help">
@@ -410,6 +425,11 @@ export function StudioView({
             </button>
           ))}
         </div>
+        <ChordEntry
+          sectionId={section.id}
+          chords={section.chords}
+          onChange={(chords) => patch({ chords })}
+        />
         <p className="muted">
           Bu kısımda {sectionNotes.length} solo notası var. Kopyalama solo
           notalarını da taşır.

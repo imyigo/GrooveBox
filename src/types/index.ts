@@ -41,6 +41,7 @@ export interface SongSection {
   repeats: number; // 1, 2, 4, 8 (or 0 for infinite loop)
   color: string;
   drumMode: DrumMode;
+  lyrics?: string;
 }
 
 export interface BodyPreset {
@@ -68,7 +69,7 @@ export interface StringState {
 export type AppGrooveboxMode = "arranger" | "live";
 
 export type SoloHarmonyMode =
-  "chord-tones" | "pentatonic" | "smart-lick" | "free-scale";
+  "chord-tones" | "pentatonic" | "smart-lick" | "free-scale" | "chromatic";
 
 export interface MasterDspSettings {
   reverbWet: number; // 0.0 to 0.5 (default 0.04)

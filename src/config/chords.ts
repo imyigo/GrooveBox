@@ -334,7 +334,7 @@ export function snapMidiToChord(
   chord: GuitarChord,
   mode: SoloHarmonyMode = "chord-tones",
 ): number {
-  if (mode === "free-scale") {
+  if (mode === "free-scale" || mode === "chromatic") {
     return midi;
   }
 

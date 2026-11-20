@@ -237,6 +237,18 @@ try {
     });
     await flush();
   };
+  const inputText = async (el, value) => {
+    await act(async () => {
+      const prototype =
+        el.tagName === "TEXTAREA"
+          ? dom.HTMLTextAreaElement.prototype
+          : dom.HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(prototype, "value").set.call(el, value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flush();
+  };
   const mount = async () => {
     root = createRoot(container);
     await act(async () =>
@@ -433,6 +445,95 @@ try {
       "IndexedDB round-trip retains embedded WAV and notes",
     );
   });
+  checks++;
+  await click(button("Groovebox"));
+  await inputText(
+    container.querySelector('textarea[aria-label="Bölüm sözleri"]'),
+    "Bir özgün dize\nBir başka dize",
+  );
+  await click(button("Duygusal Popİçten"));
+  await click(button("Bu eşlikle başla"));
+  assert.equal(
+    container.querySelector('textarea[aria-label="Bölüm sözleri"]').value,
+    "Bir özgün dize\nBir başka dize",
+  );
+  assert.equal(
+    songSequencer.getSoloCount(),
+    1,
+    "section preset preserves captured notes",
+  );
+  checks++;
+  await click(button("Son fikri geri al"));
+  await inputText(find("Kendi akorlarım"), "Am Dm E7 Am");
+  await click(button("Akorları uygula"));
+  assert.deepEqual(songSequencer.getSections()[0].chords, [
+    "Am",
+    "Dm",
+    "E7",
+    "Am",
+  ]);
+  checks++;
+  await change(find("Nota yardımı"), "chromatic");
+  await change(find("Solo enstrümanı"), "piano");
+  await click(button("Solo döngüsü kaydet"));
+  await act(async () => {
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { code: "KeyS", key: "s", bubbles: true }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await flush();
+  await act(async () =>
+    document.body.dispatchEvent(
+      new KeyboardEvent("keyup", { code: "KeyS", key: "s", bubbles: true }),
+    ),
+  );
+  assert.equal(
+    songSequencer.getRecordedNotes().at(-1).midi,
+    51,
+    "chromatic D-root keyboard keeps D# instead of snapping",
+  );
+  assert.equal(
+    songSequencer.getRecordedNotes().at(-1).harmonyMode,
+    "chromatic",
+  );
+  checks++;
+  await click(button("Solo kaydını bitir"));
+  await change(find("Solo enstrümanı"), "drums");
+  await click(button("Davul döngüsü kaydet"));
+  await act(async () => {
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { code: "KeyA", key: "a", bubbles: true }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await flush();
+  await act(async () =>
+    document.body.dispatchEvent(
+      new KeyboardEvent("keyup", { code: "KeyA", key: "a", bubbles: true }),
+    ),
+  );
+  assert.equal(songSequencer.getRecordedNotes().at(-1).instrument, "drums");
+  checks++;
+  await click(button("Davul kaydını bitir"));
+  await click(button("Durdur"));
+  await click(button("Studio"));
+  assert.match(container.textContent, /Davul kaydı/);
+  assert.equal(
+    container.querySelector('textarea[aria-label="Bölüm sözleri"]').value,
+    "Bir özgün dize\nBir başka dize",
+  );
+  checks++;
+  await click(button("Groovebox"));
+  await click(container.querySelector("input[type=checkbox]"));
+  const beforeIdea = songSequencer.getRecordedNotes();
+  await click(button("Bu eşlikle başla"));
+  assert.equal(songSequencer.getSections()[0].name, "Giriş");
+  assert.equal(songSequencer.getSoloCount(), 0);
+  await click(button("Son fikri geri al"));
+  assert.deepEqual(songSequencer.getRecordedNotes(), beforeIdea);
   checks++;
   console.log(
     `PASS: ${checks} React/DOM flows — global key, ×3, keyboard/Alt+R, project export/import/reload, WAV import/record/export, section copying and sampled guitar playback.`,

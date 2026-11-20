@@ -1,4 +1,4 @@
-import { SongSection } from "./types";
+import { SongSection, SoloHarmonyMode } from "./types";
 import { RecordedSoloNote, DEFAULT_SONG_SECTIONS } from "./audio/Sequencer";
 import {
   AcousticInstrumentType,
@@ -29,6 +29,7 @@ export interface SongProject {
   scaleId: string;
   riffInstrument: AcousticInstrumentType;
   soloInstrument: AcousticInstrumentType;
+  soloMode?: SoloHarmonyMode;
   percussionOn: boolean;
   autoAdvance: boolean;
   sections: SongSection[];
@@ -58,6 +59,7 @@ export function createProject(): SongProject {
     scaleId: "minor",
     riffInstrument: "nylon",
     soloInstrument: "violin",
+    soloMode: "chord-tones",
     percussionOn: true,
     autoAdvance: true,
     sections: DEFAULT_SONG_SECTIONS.map((s) => ({
@@ -104,6 +106,14 @@ export function parseProject(json: string): SongProject {
     !instrument(p.riffInstrument) ||
     !member(p.riffInstrument, ["nylon", "steel", "piano"]) ||
     !instrument(p.soloInstrument) ||
+    (p.soloMode !== undefined &&
+      !member(p.soloMode, [
+        "chord-tones",
+        "free-scale",
+        "chromatic",
+        "pentatonic",
+        "smart-lick",
+      ])) ||
     typeof p.percussionOn !== "boolean" ||
     typeof p.autoAdvance !== "boolean" ||
     !object(p.mix) ||
@@ -140,7 +150,9 @@ export function parseProject(json: string): SongProject {
         "flamenco",
         "mute",
       ]) ||
-      !text(s.color, 100)
+      !text(s.color, 100) ||
+      (s.lyrics !== undefined &&
+        (typeof s.lyrics !== "string" || s.lyrics.length > 20000))
     ) {
       throw new Error("Projedeki kısım veya akor bilgisi geçersiz.");
     }
@@ -161,7 +173,15 @@ export function parseProject(json: string): SongProject {
       !ids.has(n.sectionId) ||
       !instrument(n.instrument) ||
       !number(n.sectionIndex, 0, 63) ||
-      !Number.isInteger(n.sectionIndex)
+      !Number.isInteger(n.sectionIndex) ||
+      (n.harmonyMode !== undefined &&
+        !member(n.harmonyMode, [
+          "chord-tones",
+          "free-scale",
+          "chromatic",
+          "pentatonic",
+          "smart-lick",
+        ]))
     ) {
       throw new Error("Projedeki solo kaydı geçersiz.");
     }

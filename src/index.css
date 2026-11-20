@@ -1092,3 +1092,177 @@
 .wav-panel input[type="number"] {
   max-width: 120px;
 }
+.idea-panel {
+  margin-bottom: 1rem;
+  border-color: #655237;
+}
+.style-pads {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.style-pad {
+  border: 1px solid #3e4d64;
+  border-radius: 9px;
+  padding: 0.8rem;
+  background: #172233;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  text-align: left;
+  min-height: 85px;
+}
+.style-pad.active {
+  background: #30291d;
+  border-color: #c49857;
+  color: #f2d09d;
+}
+.style-pad strong {
+  font-size: 0.85rem;
+  font-weight: 550;
+}
+.style-pad span {
+  color: #9aaec9;
+  font-size: 0.75rem;
+}
+.idea-preview {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.idea-preview p {
+  margin: 0.4rem 0;
+}
+.idea-chords {
+  color: #dfc297;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.85rem;
+}
+.lyrics-panel {
+  margin-top: 1rem;
+}
+.lyrics-panel textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 140px;
+  border: 1px solid #36465d;
+  border-radius: 9px;
+  padding: 1rem;
+  font-size: 1rem;
+  line-height: 1.8;
+  background: #0e1723;
+  color: #e0e8f5;
+}
+.lyrics-panel .muted {
+  margin-top: 0.6rem;
+}
+.performance-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.melody-pads {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.melody-pad {
+  min-height: 105px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0.8rem;
+  border: 1px solid #698fc4;
+  border-bottom-width: 4px;
+  border-radius: 9px;
+  background: linear-gradient(150deg, #263d5c, #172438);
+  color: #bed4f2;
+  touch-action: none;
+  user-select: none;
+}
+.melody-pad span {
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+.melody-pad strong {
+  font-size: 1.25rem;
+  font-weight: 550;
+}
+.melody-pad small {
+  font-size: 0.68rem;
+}
+.melody-pad.pad-color-1 {
+  border-color: #638a79;
+  background: linear-gradient(150deg, #28483e, #172e28);
+  color: #b5e1c9;
+}
+.melody-pad.pad-color-2 {
+  border-color: #9b759c;
+  background: linear-gradient(150deg, #49344c, #2b1e30);
+  color: #e6c4e5;
+}
+.melody-pad.pad-color-3 {
+  border-color: #a18a60;
+  background: linear-gradient(150deg, #4d412b, #30281d);
+  color: #f0d7aa;
+}
+.melody-pad.pressed {
+  background: #eec884;
+  border-color: #fff0cc;
+  color: #291d0d;
+  transform: translateY(2px);
+}
+.recorded-drums .timeline-clip {
+  background: #33223e;
+  border-color: #74558e;
+}
+@media (max-width: 1100px) {
+  .style-pads {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .melody-pads {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .style-pads {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .melody-pad {
+    min-height: 90px;
+    padding: 0.6rem;
+  }
+  .melody-pad small {
+    font-size: 0.6rem;
+  }
+  .idea-preview .button {
+    flex: 1;
+  }
+}
+.chord-entry {
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #2a3545;
+}
+.chord-entry summary,
+.global-harmony summary {
+  cursor: pointer;
+  color: #bbcadf;
+  font-size: 0.875rem;
+  padding: 0.4rem 0;
+}
+.chord-entry input {
+  flex: 1;
+  min-width: 140px;
+}
+.global-harmony > .control-row {
+  margin-top: 0.5rem;
+}

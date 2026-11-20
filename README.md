@@ -3,6 +3,9 @@
 Tarayıcıda çalışan şarkı yazma ve kayıt uygulaması. React, TypeScript, Vite ve Web Audio API kullanır.
 
 - **Groovebox:** gitar/piyano riff'i, seçilebilir solo enstrümanı, klavye ve dokunma ile çalma, nota döngüsü kaydı ve ×1–×4 aranje geçişleri.
+- **Hazır fikirler:** 12 özgün tarz şablonu ve eşlik varyasyonları; seçili kısmı değiştirir veya giriş/söz/nakarat/köprü düzeni kurar. Başka bir düzenleme yapmadan önce son preset değişikliği geri alınabilir. Şablonlar güncel hit listesi ya da şarkı transkripsiyonları değildir.
+- **Performans:** 16 melodi padi, bilgisayar klavyesi, akora/gama uyarlanan solo veya tam serbest 12 sesli çalma. Solo ve davul notaları bölüm kimliğiyle ayrı tutulur, ayrı temizlenir ve Studio'da ayrı şeritlerde görünür.
+- **Söz defteri:** her kısmın kendi sözleri Groovebox ve Studio arasında korunur, proje dosyasına ve otomatik kayda dahildir.
 - **Studio:** bölüm ekleme, kopyalama, sıralama, akor düzenleme, gerçek solo nota şeridi ve miks kaydı.
 - **Global ton/gam:** tüm bölümlerin akorlarını ve kaydedilmiş melodiyi birlikte uyarlar.
 - **WAV kanalı:** en fazla 20 MB WAV içe aktarma, gerçek dalga biçimi, seviye/sessize alma ve başlangıç zamanı. Dosya özgün hız/perdede çalar; otomatik tempo eşleme veya pitch-shift uygulanmaz.

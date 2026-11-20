@@ -20,6 +20,30 @@ try {
   const { SongSequencer } = await vite.ssrLoadModule("/src/audio/Sequencer.ts");
   const { audioEngine } = await vite.ssrLoadModule("/src/audio/AudioEngine.ts");
   const { strumEngine } = await vite.ssrLoadModule("/src/audio/StrumEngine.ts");
+  const { SONG_STYLES, ideaChords, ideaSections, parseChordSequence } =
+    await vite.ssrLoadModule("/src/config/songIdeas.ts");
+  for (const style of SONG_STYLES)
+    for (const root of ROOT_NOTES)
+      for (let variant = 0; variant < 8; variant++) {
+        const chords = ideaChords(style, root, variant);
+        assert.equal(chords.length, 4);
+        assert.ok(chords.every((id) => GUITAR_CHORDS[id]));
+        const sections = ideaSections(style, root, variant);
+        assert.equal(new Set(sections.map((s) => s.id)).size, 4);
+        assert.ok(
+          sections.every((s) => s.chords.every((id) => GUITAR_CHORDS[id])),
+        );
+        checks++;
+      }
+  assert.deepEqual(parseChordSequence("am, dm | E7 am"), [
+    "Am",
+    "Dm",
+    "E7",
+    "Am",
+  ]);
+  assert.deepEqual(parseChordSequence("D♭m F♯m"), ["C#m", "F#m"]);
+  assert.throws(() => parseChordSequence("Am nope"));
+  checks++;
 
   for (const root of ROOT_NOTES)
     for (const scale of Object.values(MUSICAL_SCALES)) {
@@ -65,12 +89,24 @@ try {
     }
   const project = createProject();
   assert.deepEqual(parseProject(JSON.stringify(project)), project);
+  const lyricProject = {
+    ...project,
+    soloMode: "chromatic",
+    sections: project.sections.map((s) => ({
+      ...s,
+      lyrics: "Bir özgün dize\nBir başka dize",
+    })),
+  };
+  assert.deepEqual(parseProject(JSON.stringify(lyricProject)), lyricProject);
+  checks++;
   for (const mutate of [
     (p) => (p.bpm = null),
     (p) => (p.sections[0].chords = ["__proto__"]),
     (p) => p.sections.push(p.sections[0]),
     (p) => (p.mix.reverbWet = 10),
     (p) => (p.sections[0].repeats = 2.5),
+    (p) => (p.sections[0].lyrics = 42),
+    (p) => (p.soloMode = "unknown"),
   ]) {
     const invalid = structuredClone(project);
     mutate(invalid);
@@ -211,6 +247,58 @@ try {
     assert.equal(sequence.getRecordedNotes().length, 0);
     assert.equal(captured.length, 1);
     checks++;
+    const layered = new SongSequencer();
+    layered.setSections([first]);
+    layered.setPercussionEnabled(true);
+    const layers = [
+      {
+        id: "melody",
+        sectionId: "a",
+        sectionIndex: 0,
+        midi: 69,
+        step: 0,
+        barIndex: 0,
+        velocity: 0.9,
+        instrument: "piano",
+      },
+      {
+        id: "drum",
+        sectionId: "a",
+        sectionIndex: 0,
+        midi: 36,
+        step: 0,
+        barIndex: 0,
+        velocity: 0.9,
+        instrument: "drums",
+      },
+    ];
+    layered.setRecordedNotes(layers);
+    layered.setSoloMuted(true);
+    played.length = 0;
+    layered.scheduleStep(0, 0, 0, now);
+    assert.deepEqual(
+      played.map((args) => args[3]),
+      ["drums"],
+      "solo mute must not mute recorded drums",
+    );
+    checks++;
+    layered.setSoloMuted(false);
+    layered.setPercussionEnabled(false);
+    played.length = 0;
+    layered.scheduleStep(0, 0, 0, now);
+    assert.deepEqual(
+      played.map((args) => args[3]),
+      ["piano"],
+      "drum mute must not mute the melody",
+    );
+    checks++;
+    layered.clearSolo({ sectionId: "a", track: "drums" });
+    assert.deepEqual(
+      layered.getRecordedNotes().map((n) => n.id),
+      ["melody"],
+    );
+    checks++;
+    layered.stop();
   } finally {
     globalThis.setTimeout = originalTimeout;
     globalThis.clearTimeout = originalClearTimeout;

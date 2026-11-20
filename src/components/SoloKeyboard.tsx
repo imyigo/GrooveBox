@@ -22,6 +22,10 @@ interface Props {
   isPlaying: boolean;
   instrument?: AcousticInstrumentType;
   onInstrumentChange?: (instrument: AcousticInstrumentType) => void;
+  harmonyMode?: SoloHarmonyMode;
+  onHarmonyChange?: (mode: SoloHarmonyMode) => void;
+  sectionId?: string;
+  sectionName?: string;
   onRootChange?: (root: string) => void;
   onScaleChange?: (scale: string) => void;
   onApplyRecommendedChords?: (chords: string[]) => void;
@@ -99,9 +103,14 @@ export function SoloKeyboard({
   instrument = "violin",
   onInstrumentChange,
   isPlaying,
+  harmonyMode = "chord-tones",
+  onHarmonyChange,
+  sectionId,
+  sectionName,
 }: Props) {
   const [octave, setOctave] = useState(0);
-  const [harmony, setHarmony] = useState<SoloHarmonyMode>("chord-tones");
+  const [layout, setLayout] = useState<"pads" | "keyboard">("pads");
+  const harmony = harmonyMode;
   const [recording, setRecording] = useState(
     songSequencer.getIsRecordingSolo(),
   );
@@ -111,15 +120,68 @@ export function SoloKeyboard({
   const held = useRef(new Map<string, number>());
   const mounted = useRef(true);
   const pitches = getChordPitchClasses(activeChord);
+  const isDrums = instrument === "drums";
+  const trackName = isDrums ? "Davul" : "Solo";
+  const trackNotes = songSequencer
+    .getRecordedNotes()
+    .filter(
+      (note) =>
+        (!sectionId || note.sectionId === sectionId) &&
+        (note.instrument === "drums") === isDrums,
+    );
+  const rowNotes = (row: (typeof ROWS)[number]) => {
+    const base = getScaleNotes(
+      currentRoot,
+      currentScaleId,
+      3 + octave + row.octave,
+    );
+    if (harmony !== "chromatic") return base;
+    const names = [
+      "C",
+      "C#",
+      "D",
+      "D#",
+      "E",
+      "F",
+      "F#",
+      "G",
+      "G#",
+      "A",
+      "A#",
+      "B",
+    ];
+    return Array.from({ length: 24 }, (_, index) => {
+      const midi = base[0].midi + index;
+      return {
+        midi,
+        degree: index + 1,
+        noteName: `${names[midi % 12]}${Math.floor(midi / 12) - 1}`,
+      };
+    });
+  };
+  const padNotes = [
+    ...rowNotes(ROWS[1]),
+    ...rowNotes(ROWS[0]).map((note) => ({
+      ...note,
+      midi: note.midi + 12,
+      noteName: note.noteName.replace(/\d+$/, (octave) =>
+        String(Number(octave) + 1),
+      ),
+    })),
+  ].slice(0, 16);
   const updatePressed = () => setPressed(new Set(held.current.keys()));
   useEffect(() => {
     mounted.current = true;
     const off = songSequencer.onNotesChanged(() =>
       setCount(songSequencer.getSoloCount()),
     );
+    const offStep = songSequencer.onStep((state) =>
+      setRecording(state.isRecording),
+    );
     return () => {
       mounted.current = false;
       off();
+      offStep();
       songSequencer.setIsRecordingSolo(false);
       audioEngine.stopSoloNote();
       held.current.clear();
@@ -132,7 +194,7 @@ export function SoloKeyboard({
         instrument === "drums"
           ? midi
           : snapMidiToChord(midi, activeChord, harmony);
-      if (instrument !== "drums") {
+      if (instrument !== "drums" && harmony !== "chromatic") {
         const pitches = MUSICAL_SCALES[currentScaleId].intervals.map(
           (n) => (n + noteSemitone(currentRoot)) % 12,
         );
@@ -157,7 +219,7 @@ export function SoloKeyboard({
         0.9,
         harmony === "smart-lick" && instrument !== "drums",
       );
-      songSequencer.addSoloNote(finalMidi, 0.9);
+      songSequencer.addSoloNote(finalMidi, 0.9, harmony);
     },
     [activeChord, harmony, instrument, currentRoot, currentScaleId],
   );
@@ -206,11 +268,7 @@ export function SoloKeyboard({
       }
       for (const row of ROWS) {
         const index = row.codes.indexOf(event.code);
-        const notes = getScaleNotes(
-          currentRoot,
-          currentScaleId,
-          3 + octave + row.octave,
-        );
+        const notes = rowNotes(row);
         if (index >= 0 && notes[index]) {
           event.preventDefault();
           void trigger(notes[index].midi, event.code);
@@ -238,6 +296,7 @@ export function SoloKeyboard({
     currentRoot,
     currentScaleId,
     octave,
+    harmony,
     instrument,
     toggleRecording,
   ]);
@@ -258,14 +317,27 @@ export function SoloKeyboard({
             onClick={() => void toggleRecording()}
           >
             <Circle size={15} />
-            {recording ? "Solo kaydını bitir" : "Solo döngüsü kaydet"}
+            {recording
+              ? `${trackName} kaydını bitir`
+              : `${trackName} döngüsü kaydet`}
           </button>
-          <span className="muted">{count} nota</span>
+          <span
+            className="muted"
+            title={`Parçada toplam ${count} kayıtlı olay`}
+          >
+            {trackNotes.length} {isDrums ? "vuruş" : "nota"} ·{" "}
+            {sectionName || "seçili kısım"}
+          </span>
           <button
             className="icon-button"
-            aria-label="Solo notalarını temizle"
-            disabled={!count}
-            onClick={() => songSequencer.clearSolo()}
+            aria-label={`${trackName} notalarını temizle`}
+            disabled={!trackNotes.length}
+            onClick={() =>
+              songSequencer.clearSolo({
+                sectionId,
+                track: isDrums ? "drums" : "solo",
+              })
+            }
           >
             <Trash2 size={17} />
           </button>
@@ -280,6 +352,10 @@ export function SoloKeyboard({
             onChange={(e) => {
               held.current.forEach((_, key) => release(key));
               const type = e.target.value as AcousticInstrumentType;
+              if ((type === "drums") !== isDrums) {
+                songSequencer.setIsRecordingSolo(false);
+                setRecording(false);
+              }
               audioEngine.setSoloInstrument(type);
               onInstrumentChange?.(type);
             }}
@@ -296,10 +372,13 @@ export function SoloKeyboard({
           <select
             aria-label="Nota yardımı"
             value={harmony}
-            onChange={(e) => setHarmony(e.target.value as SoloHarmonyMode)}
+            onChange={(e) =>
+              onHarmonyChange?.(e.target.value as SoloHarmonyMode)
+            }
           >
             <option value="chord-tones">Akor seslerine uyarla</option>
             <option value="free-scale">Global gamda serbest</option>
+            <option value="chromatic">Tam serbest · 12 ses</option>
             <option value="pentatonic">Pentatonik</option>
             <option value="smart-lick">Akor + süsleme</option>
           </select>
@@ -332,6 +411,31 @@ export function SoloKeyboard({
           {error}
         </p>
       )}
+      {!isDrums && (
+        <div className="performance-toolbar">
+          <div className="segmented" aria-label="Çalma görünümü">
+            <button
+              className={layout === "pads" ? "active" : ""}
+              aria-pressed={layout === "pads"}
+              onClick={() => setLayout("pads")}
+            >
+              Performans padleri
+            </button>
+            <button
+              className={layout === "keyboard" ? "active" : ""}
+              aria-pressed={layout === "keyboard"}
+              onClick={() => setLayout("keyboard")}
+            >
+              Klavye
+            </button>
+          </div>
+          <span className="muted">
+            {harmony === "chromatic"
+              ? "Tüm sesler serbest."
+              : "Notalar otomatik uyarlanır. İstediğin pade dokun."}
+          </span>
+        </div>
+      )}
       {instrument === "drums" ? (
         <div className="drum-pads">
           {ACOUSTIC_DRUM_PADS.map((pad) => (
@@ -344,11 +448,42 @@ export function SoloKeyboard({
               }}
               onPointerUp={() => release(pad.code)}
               onPointerCancel={() => release(pad.code)}
+              onLostPointerCapture={() => release(pad.code)}
             >
               <kbd>{pad.key}</kbd>
               <strong>{pad.name}</strong>
             </button>
           ))}
+        </div>
+      ) : layout === "pads" ? (
+        <div className="melody-pads" aria-label="Solo performans padleri">
+          {padNotes.map((note, index) => {
+            const key = `pad-${index}`;
+            return (
+              <button
+                key={key}
+                className={`melody-pad pad-color-${index % 4} ${pressed.has(key) ? "pressed" : ""}`}
+                aria-label={`Solo pad ${index + 1}: ${note.noteName}`}
+                onPointerDown={(e) => {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  void trigger(note.midi, key);
+                }}
+                onPointerUp={() => release(key)}
+                onPointerCancel={() => release(key)}
+                onLostPointerCapture={() => release(key)}
+              >
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <strong>{note.noteName}</strong>
+                <small>
+                  {pitches.includes(note.midi % 12)
+                    ? "Uyumlu ses"
+                    : harmony === "chromatic"
+                      ? "Serbest ses"
+                      : "Melodi"}
+                </small>
+              </button>
+            );
+          })}
         </div>
       ) : (
         <div className="keyboard-rows">
@@ -356,11 +491,7 @@ export function SoloKeyboard({
             <div key={row.name} className="keyboard-row">
               <span>{row.name}</span>
               <div className="note-keys">
-                {getScaleNotes(
-                  currentRoot,
-                  currentScaleId,
-                  3 + octave + row.octave,
-                )
+                {rowNotes(row)
                   .slice(0, row.codes.length)
                   .map((note, index) => (
                     <button
