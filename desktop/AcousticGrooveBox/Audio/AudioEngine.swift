@@ -143,10 +143,6 @@ public final class NativeAudioEngine: ObservableObject {
         guard !engine.isRunning else { return }
         do {
             try engine.start()
-            // Player'ları hazırla
-            chordPlayers.forEach { $0.play() }
-            soloPlayers.forEach { $0.play() }
-            drumPlayers.forEach { $0.play() }
         } catch {
             print("AVAudioEngine başlatma hatası: \(error)")
         }
